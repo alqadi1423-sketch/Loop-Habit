@@ -84,12 +84,17 @@ private const val VIEW_SESSION = 2
  * cards, one per page, or one at a time where a touch anywhere counts.
  */
 @Composable
-fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
+fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit, free: Screen.AdhkarRead? = null) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
-    val habit = remember(habitId) { db.habit(habitId) }
-    val items = remember(habitId) {
+    val habit = remember(habitId) { if (free != null) null else db.habit(habitId) }
+    // A chapter opened from the adhkar page keeps today's count under its own key and marks no habit.
+    val key = if (free != null) -(free.category * 10L + free.part) - 1 else habitId
+    val title = if (free != null) Adhkar.title(ctx, free.category, free.part) else habit?.name ?: ""
+    val colorValue = habit?.color ?: 0xFF0F5C55.toInt()
+    val items = remember(habitId, free) {
         when {
+            free != null -> Adhkar.items(ctx, free.category, free.part)
             habit == null -> emptyList()
             habit.contentRef == Adhkar.CUSTOM -> db.customItems(habitId)
             else -> Adhkar.items(ctx, habit.contentRef, habit.contentPart)
@@ -97,7 +102,7 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
     }
     val today = remember { Schedule.today() }
     val counts = remember(habitId) {
-        mutableStateMapOf<Int, Int>().apply { putAll(db.progress(habitId, today)) }
+        mutableStateMapOf<Int, Int>().apply { putAll(db.progress(key, today)) }
     }
     val prefs = remember { ctx.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var view by remember { mutableIntStateOf(prefs.getInt("reader_view", VIEW_VERTICAL)) }
@@ -114,11 +119,11 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         mutableIntStateOf(items.indexOfFirst { (counts[it.id] ?: 0) < it.count }.let { if (it < 0) 0 else it })
     }
 
-    if (habit == null || items.isEmpty()) {
+    if ((habit == null && free == null) || items.isEmpty()) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(habit?.name ?: "") },
+                    title = { Text(title) },
                     navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") } }
                 )
             }
@@ -132,8 +137,8 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         onDispose { changed() }
     }
 
-    val color = Color(habit.color)
-    val tint = habitTint(habit.color)
+    val color = Color(colorValue)
+    val tint = habitTint(colorValue)
     val family = if (naskh) remember { FontFamily(Font(R.font.amiri_regular)) } else MaterialTheme.typography.bodyLarge.fontFamily
     fun left(d: Dhikr) = (d.count - (counts[d.id] ?: 0)).coerceAtLeast(0)
     fun share(): Double = items.sumOf { min(1.0, (counts[it.id] ?: 0).toDouble() / it.count) } / items.size
@@ -149,8 +154,8 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         val now = (counts[d.id] ?: 0) + 1
         if (now > d.count) return
         counts[d.id] = now
-        db.setProgress(habitId, today, d.id, now)
-        db.setPartial(habitId, today, (share() * 1000).roundToInt())
+        db.setProgress(key, today, d.id, now)
+        if (habit != null) db.setPartial(habitId, today, (share() * 1000).roundToInt())
         val all = items.all { left(it) == 0 }
         if (now >= d.count) {
             if (buzzEnd) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -159,7 +164,7 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         } else if (buzzTap) {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
-        if (all) {
+        if (all && habit != null) {
             db.setEntry(habitId, today, Mark.DONE)
             changed()
         }
@@ -224,7 +229,7 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(habit.name) },
+                title = { Text(title) },
                 navigationIcon = { IconButton(onClick = { leave() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") } },
                 actions = { IconButton(onClick = { options = true }) { Icon(Icons.Default.Settings, "خيارات العرض") } }
             )
@@ -249,8 +254,8 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("أتممت ${habit.name}", style = MaterialTheme.typography.headlineSmall, color = tint)
-                    Text("سُجلت العادة منجزة اليوم.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("أتممت $title", style = MaterialTheme.typography.headlineSmall, color = tint)
+                    if (habit != null) Text("سُجلت العادة منجزة اليوم.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(20.dp))
                     Button(onClick = back) { Text("رجوع") }
                 }

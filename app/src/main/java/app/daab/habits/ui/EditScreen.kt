@@ -119,6 +119,7 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
     var customError by remember { mutableStateOf(false) }
     var contentPart by remember { mutableIntStateOf(original?.contentPart ?: 0) }
     var pickContent by remember { mutableStateOf(false) }
+    var pickSurah by remember { mutableStateOf(false) }
     var pickAnchor by remember { mutableIntStateOf(0) }
     var pickAnchorClock by remember { mutableIntStateOf(0) }
     var nameError by remember { mutableStateOf(false) }
@@ -132,8 +133,9 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
             nameError = true
             return
         }
-        val amount = contentAmount.trim().toIntOrNull() ?: 0
-        if (contentRef == Quran.CONTENT && (amount < 1 || amount > 3650)) {
+        val typed = contentAmount.trim().toIntOrNull() ?: 0
+        val amount = if (contentUnit == Quran.UNIT_SURAH) typed.coerceIn(1, 114) else typed
+        if (contentRef == Quran.CONTENT && (amount < 1 || amount > (if (contentUnit == Quran.UNIT_SURAH) 114 else 3650))) {
             amountError = true
             return
         }
@@ -311,7 +313,17 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                         FilterChip(selected = contentUnit == i, onClick = { contentUnit = i }, label = { Text(Quran.unitNames[i]) })
                     }
                 }
-                OutlinedTextField(
+                if (contentUnit == Quran.UNIT_SURAH) {
+                    val names = remember { Quran.text(ctx).surahs.map { it.name } }
+                    OutlinedButton(onClick = { pickSurah = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("السورة: " + (names.getOrNull((contentAmount.toIntOrNull() ?: 1) - 1) ?: names[0]))
+                    }
+                    Text(
+                        "تُقرأ السورة كاملة في كل مرة، وتُنجز العادة عند إتمامها.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else OutlinedTextField(
                     value = contentAmount,
                     onValueChange = { v -> contentAmount = v.filter { it.isDigit() }.take(4); amountError = false },
                     label = { Text(if (contentUnit == Quran.UNIT_DAYS) "عدد أيام الختمة" else "العدد كل يوم") },
@@ -480,6 +492,26 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                 }) { Text("إضافة") }
             },
             dismissButton = { TextButton(onClick = { addCustom = false }) { Text("إلغاء") } }
+        )
+    }
+
+    if (pickSurah) {
+        val names = remember { Quran.text(ctx).surahs.map { it.name } }
+        AlertDialog(
+            onDismissRequest = { pickSurah = false },
+            title = { Text("اختر السورة") },
+            text = {
+                LazyColumn {
+                    items(names.indices.toList()) { i ->
+                        TextButton(onClick = {
+                            contentAmount = (i + 1).toString()
+                            amountError = false
+                            pickSurah = false
+                        }) { Text("${i + 1}. ${names[i]}") }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { pickSurah = false }) { Text("إلغاء") } }
         )
     }
 

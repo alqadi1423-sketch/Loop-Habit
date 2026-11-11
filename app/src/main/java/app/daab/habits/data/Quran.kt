@@ -48,7 +48,10 @@ object Quran {
     const val UNIT_AYAT = 3
     const val UNIT_DAYS = 4
 
-    val unitNames = listOf("أرباع", "أحزاب", "أجزاء", "آيات", "ختمة في أيام")
+    /** The portion is one whole surah every time, its number kept as the amount. */
+    const val UNIT_SURAH = 5
+
+    val unitNames = listOf("أرباع", "أحزاب", "أجزاء", "آيات", "ختمة في أيام", "سورة معينة")
 
     @Volatile
     private var cache: QuranText? = null
@@ -70,8 +73,11 @@ object Quran {
         return QuranText(surahs, rub, ayat).also { cache = it }
     }
 
-    fun describe(unit: Int, amount: Int): String =
-        if (unit == UNIT_DAYS) "ختمة في $amount يومًا" else "$amount ${unitNames[unit.coerceIn(0, 3)]} كل يوم"
+    fun describe(unit: Int, amount: Int): String = when (unit) {
+        UNIT_DAYS -> "ختمة في $amount يومًا"
+        UNIT_SURAH -> "سورة كاملة"
+        else -> "$amount ${unitNames[unit.coerceIn(0, 3)]} كل يوم"
+    }
 
     /** Where a portion that begins at [start] ends, never past the end of the Quran. */
     private fun endOf(q: QuranText, start: Int, unit: Int, amount: Int, daysLeft: Int): Int {
@@ -97,6 +103,11 @@ object Quran {
     fun today(ctx: Context, db: Db, h: Habit, day: Long): QuranRange {
         db.quranDay(h.id, day)?.let { return it }
         val q = text(ctx)
+        if (h.contentUnit == UNIT_SURAH) {
+            val s = q.surahs[(h.contentAmount - 1).coerceIn(0, q.surahs.size - 1)]
+            db.setQuranDay(h.id, day, s.start, s.start + s.count, s.start)
+            return QuranRange(s.start, s.start + s.count, s.start)
+        }
         var (position, planEnd) = db.quranState(h.id)
         // Carry on from where the last portion was left, whether it was finished from the
         // reader, marked done from the record, or only partly read.

@@ -17,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +57,10 @@ import kotlin.math.roundToInt
 sealed interface Screen {
     data object Home : Screen
     data object Counters : Screen
+    data object Adhkar : Screen
+    data object QuranTab : Screen
+    data class AdhkarRead(val category: Int, val part: Int) : Screen
+    data class QuranRead(val start: Int, val end: Int) : Screen
     data object Settings : Screen
     data object Archived : Screen
     data class Edit(val id: Long, val quran: Boolean = false) : Screen
@@ -156,7 +159,9 @@ fun App(resumes: Int, readerRequest: Long, readerHandled: () -> Unit) {
         HabitWidget.updateAll(ctx)
     }
     val go = { next: Screen ->
-        if (next == Screen.Home || next == Screen.Counters || next == Screen.Settings) tab = next
+        if (next == Screen.Home || next == Screen.Counters || next == Screen.Settings ||
+            next == Screen.Adhkar || next == Screen.QuranTab
+        ) tab = next
         screen = next
     }
 
@@ -172,6 +177,10 @@ fun App(resumes: Int, readerRequest: Long, readerHandled: () -> Unit) {
     when (val s = screen) {
         is Screen.Home -> HomeScreen(db, version + resumes, changed, go)
         is Screen.Counters -> CountersScreen(db, version, changed, go)
+        is Screen.Adhkar -> AdhkarScreen(db, version, go)
+        is Screen.QuranTab -> QuranTab(db, version, go)
+        is Screen.AdhkarRead -> ReaderScreen(db, 0, changed, { go(tab) }, s)
+        is Screen.QuranRead -> QuranReadScreen(s.start, s.end, { changed(); go(tab) }, go)
         is Screen.Settings -> SettingsScreen(db, changed, go)
         is Screen.Archived -> ArchivedScreen(db, version, changed, { go(Screen.Settings) })
         is Screen.Edit -> EditScreen(db, s.id, s.quran, { changed(); go(tab) }, { go(tab) })
@@ -191,8 +200,16 @@ fun BottomNav(current: Screen, go: (Screen) -> Unit) {
             icon = { Icon(Icons.Default.Home, null) }, label = { Text("العادات") }
         )
         NavigationBarItem(
+            selected = current == Screen.Adhkar, onClick = { go(Screen.Adhkar) },
+            icon = { Icon(BeadsIcon, null) }, label = { Text("الأذكار") }
+        )
+        NavigationBarItem(
+            selected = current == Screen.QuranTab, onClick = { go(Screen.QuranTab) },
+            icon = { Icon(BookIcon, null) }, label = { Text("القرآن") }
+        )
+        NavigationBarItem(
             selected = current == Screen.Counters, onClick = { go(Screen.Counters) },
-            icon = { Icon(Icons.AutoMirrored.Filled.List, null) }, label = { Text("العدّادات") }
+            icon = { Icon(BarsIcon, null) }, label = { Text("العدّادات") }
         )
         NavigationBarItem(
             selected = current == Screen.Settings, onClick = { go(Screen.Settings) },

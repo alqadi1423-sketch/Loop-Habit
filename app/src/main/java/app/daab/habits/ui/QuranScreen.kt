@@ -109,7 +109,7 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         db.setPartial(habitId, today, 1000)
         db.setEntry(habitId, today, Mark.DONE)
         val (position, planEnd) = db.quranState(habitId)
-        if (position >= range.start && position < range.end) {
+        if (habit.contentUnit != Quran.UNIT_SURAH && position >= range.start && position < range.end) {
             if (range.end >= Quran.TOTAL) db.setQuranState(habitId, 0, 0, addKhatma = true)
             else db.setQuranState(habitId, range.end, planEnd)
         }
