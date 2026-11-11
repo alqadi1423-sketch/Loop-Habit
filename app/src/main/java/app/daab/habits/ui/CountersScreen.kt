@@ -44,6 +44,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.CompositionLocalProvider
 import app.daab.habits.data.Counter
 import app.daab.habits.data.Db
+import app.daab.habits.data.Habit
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 
 /** A signed number written left to right so the sign sits where it is read. */
 @Composable
@@ -60,6 +63,9 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
     val habits = remember(version) { db.habits(true) }
     val done = remember(version) { habits.associate { it.id to db.doneCount(it.id) } }
     var edit by remember { mutableStateOf<Counter?>(null) }
+    var linkTo by remember { mutableStateOf<Counter?>(null) }
+    var effectOf by remember { mutableStateOf<Habit?>(null) }
+    var effectCounter by remember { mutableStateOf(0L) }
 
     Scaffold(
         topBar = {
@@ -78,7 +84,7 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                     Text("لا عدّادات بعد", style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "العدّاد يجمع رصيدًا تراكميًا من عادات تختارها. أنشئ عدّادًا من علامة الإضافة، ثم من تعديل كل عادة اختر العدّاد وأثرها عليه، مثل 3 أو 0 أو ‎-1.",
+                        "العدّاد رصيد تراكمي يُحسب وحده من عادات تربطها به. مثال: عدّاد باسم «الصيام»، تربط به عادة أثرها 3 فتضيف ثلاثة في كل مرة تنجزها، وعادة أثرها 0 فتُسجل ولا تغيّره، وعادة أثرها ‎-1 فتنقص واحدًا. ابدأ بعلامة الإضافة في الأعلى وسمِّ العدّاد.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -88,18 +94,18 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                 val total = members.sumOf { (done[it.id] ?: 0) * it.counterEffect }
                 Column(
                     Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp))
-                        .background(MaterialTheme.colorScheme.inverseSurface).padding(20.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer).padding(20.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             c.name, Modifier.weight(1f),
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.inverseOnSurface
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
                             "تعديل",
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.clickable { edit = c }.padding(8.dp)
                         )
                     }
@@ -107,7 +113,7 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                         Text(
                             total.toString(),
                             style = MaterialTheme.typography.displayMedium,
-                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             textAlign = TextAlign.End,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -115,13 +121,13 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                     Text(
                         "المجموع الكلي",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.inverseOnSurface
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
                 Panel(Modifier.padding(top = 8.dp), padding = 0.dp) {
                     if (members.isEmpty()) {
                         Text(
-                            "لا عادات مربوطة بهذا العدّاد. اربطها من تعديل العادة.",
+                            "لا عادات مربوطة بهذا العدّاد بعد. اضغط «ربط عادة» واختر العادة وأثرها.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(14.dp)
                         )
@@ -130,7 +136,10 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         val times = done[h.id] ?: 0
                         Row(
-                            Modifier.fillMaxWidth().clickable { go(Screen.Detail(h.id)) }.padding(14.dp),
+                            Modifier.fillMaxWidth().clickable {
+                                effectCounter = c.id
+                                effectOf = h
+                            }.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
@@ -149,6 +158,8 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                             Signed(times * h.counterEffect, MaterialTheme.typography.titleMedium, habitTint(h.color))
                         }
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    TextButton(onClick = { linkTo = c }, modifier = Modifier.padding(horizontal = 6.dp)) { Text("ربط عادة") }
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -166,8 +177,11 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                     value = name,
                     onValueChange = { name = it; error = false },
                     label = { Text("اسم العدّاد") },
+                    placeholder = { Text("مثل: الصيام") },
                     isError = error,
-                    supportingText = { if (error) Text("اكتب اسم العدّاد") },
+                    supportingText = {
+                        Text(if (error) "اكتب اسم العدّاد" else "هذا اسم العدّاد لا رقمه. المجموع يُحسب وحده من العادات المربوطة به.")
+                    },
                     singleLine = true
                 )
             },
@@ -190,6 +204,67 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                     }) { Text("حذف العدّاد وإبقاء عاداته") }
                 } else {
                     TextButton(onClick = { edit = null }) { Text("إلغاء") }
+                }
+            }
+        )
+    }
+
+    linkTo?.let { c ->
+        val free = habits.filter { it.counterId != c.id && !it.archived }
+        AlertDialog(
+            onDismissRequest = { linkTo = null },
+            title = { Text("اختر العادة") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (free.isEmpty()) Text("لا عادات أخرى. أضف عادة من صفحة العادات أولًا.")
+                    for (h in free) {
+                        TextButton(onClick = {
+                            effectCounter = c.id
+                            effectOf = h
+                            linkTo = null
+                        }) { Text(h.name) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { linkTo = null }) { Text("إلغاء") } }
+        )
+    }
+
+    effectOf?.let { h ->
+        val linked = h.counterId == effectCounter
+        var text by remember(h) { mutableStateOf(if (linked) h.counterEffect.toString() else "1") }
+        AlertDialog(
+            onDismissRequest = { effectOf = null },
+            title = { Text(h.name) },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { v ->
+                        val sign = if (v.trim().startsWith("-")) "-" else ""
+                        text = sign + v.filter { it.isDigit() }.take(4)
+                    },
+                    label = { Text("أثرها في كل إنجاز") },
+                    supportingText = { Text("رقم فقط. مثل 3 لتضيف ثلاثة، أو 0 بلا أثر، أو ‎-1 لتنقص واحدًا.") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    db.save(h.copy(counterId = effectCounter, counterEffect = (text.toIntOrNull() ?: 0).coerceIn(-9999, 9999)))
+                    effectOf = null
+                    changed()
+                }) { Text("حفظ") }
+            },
+            dismissButton = {
+                if (linked) {
+                    TextButton(onClick = {
+                        db.save(h.copy(counterId = 0, counterEffect = 0))
+                        effectOf = null
+                        changed()
+                    }) { Text("فك الربط") }
+                } else {
+                    TextButton(onClick = { effectOf = null }) { Text("إلغاء") }
                 }
             }
         )

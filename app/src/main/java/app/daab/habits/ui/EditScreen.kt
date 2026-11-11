@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -284,6 +286,7 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                     value = target,
                     onValueChange = { v -> target = v.filter { it.isDigit() }.take(4) },
                     label = { Text("هدف رقمي في اليوم، اختياري") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     supportingText = { Text("مثل 8 لأكواب الماء. كل ضغطة تزيد واحدًا، وتُنجز العادة عند بلوغ العدد.") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -312,6 +315,7 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                     value = contentAmount,
                     onValueChange = { v -> contentAmount = v.filter { it.isDigit() }.take(4); amountError = false },
                     label = { Text(if (contentUnit == Quran.UNIT_DAYS) "عدد أيام الختمة" else "العدد كل يوم") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = amountError,
                     supportingText = {
                         Text(
@@ -341,6 +345,7 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                             counterEffect = sign + v.filter { it.isDigit() }.take(4)
                         },
                         label = { Text("أثرها على العدّاد في كل إنجاز") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         supportingText = { Text("مثل 3 لتضيف ثلاثة، أو 0 لتُسجل بلا أثر، أو ‎-1 لتنقص واحدًا.") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -459,6 +464,7 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                         value = count,
                         onValueChange = { v -> count = v.filter { it.isDigit() }.take(4) },
                         label = { Text("عدد المرات") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
                     )
                 }
