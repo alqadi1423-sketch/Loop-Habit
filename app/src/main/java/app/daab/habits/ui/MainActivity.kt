@@ -407,7 +407,7 @@ fun HabitRow(s: HabitState, today: Long, times: IntArray, now: Int, active: Bool
     val value = s.entries[today] ?: Mark.NONE
     val score = (Schedule.score(s.habit, s.dates, s.entries, today, s.partials) * 100).roundToInt()
     val readPercent = if (s.habit.contentRef != 0 && value == Mark.NONE) ((s.partials[today] ?: 0) / 10.0).roundToInt() else 0
-    val counted = if (s.habit.target > 0 && value == Mark.NONE) (s.partials[today] ?: 0) * s.habit.target / 1000 else -1
+    val counted = if (s.habit.target > 0 && value == Mark.NONE) ((s.partials[today] ?: 0) * s.habit.target + 999) / 1000 else -1
     val windowed = Schedule.hasWindow(s.habit)
     val phase = Schedule.phase(s.habit, times, now)
     val missed = active && windowed && phase == Phase.CLOSED && value == Mark.NONE
