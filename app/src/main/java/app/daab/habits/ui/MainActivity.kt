@@ -2,6 +2,7 @@
 
 package app.daab.habits.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -46,6 +47,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -76,19 +79,31 @@ sealed interface Screen {
     data object Settings : Screen
     data class Edit(val id: Long) : Screen
     data class Detail(val id: Long) : Screen
+    data class Reader(val id: Long) : Screen
 }
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        const val EXTRA_READER = "reader_habit"
+    }
+
     private var resumes = mutableIntStateOf(0)
+    private var readerRequest = mutableLongStateOf(0L)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         ReminderReceiver.scheduleAll(this)
+        readerRequest.longValue = intent?.getLongExtra(EXTRA_READER, 0L) ?: 0L
         setContent {
-            DaabTheme { App(resumes.intValue) }
+            DaabTheme { App(resumes.intValue, readerRequest.longValue) { readerRequest.longValue = 0L } }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        readerRequest.longValue = intent.getLongExtra(EXTRA_READER, 0L)
     }
 
     override fun onResume() {
@@ -98,9 +113,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-class HabitState(val habit: Habit, val dates: Set<Long>, val entries: Map<Long, Int>)
+class HabitState(
+    val habit: Habit, val dates: Set<Long>, val entries: Map<Long, Int>, val partials: Map<Long, Int>
+)
 
-fun loadStates(db: Db): List<HabitState> = db.habits().map { HabitState(it, db.dates(it.id), db.entries(it.id)) }
+fun loadStates(db: Db): List<HabitState> =
+    db.habits().map { HabitState(it, db.dates(it.id), db.entries(it.id), db.partials(it.id)) }
 
 val weekdayNames = listOf("أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت")
 
@@ -125,7 +143,7 @@ fun windowText(h: Habit, times: IntArray): String =
         " إلى " + anchorLabel(h.endKind, h.endValue, times, "آخر اليوم")
 
 @Composable
-fun App(resumes: Int) {
+fun App(resumes: Int, readerRequest: Long, readerHandled: () -> Unit) {
     val ctx = LocalContext.current
     val db = remember { Db.get(ctx) }
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
@@ -137,11 +155,19 @@ fun App(resumes: Int) {
 
     BackHandler(screen != Screen.Home) { screen = Screen.Home }
 
+    LaunchedEffect(readerRequest) {
+        if (readerRequest > 0L) {
+            screen = Screen.Reader(readerRequest)
+            readerHandled()
+        }
+    }
+
     when (val s = screen) {
         is Screen.Home -> HomeScreen(db, version + resumes, changed, { screen = it })
         is Screen.Settings -> SettingsScreen({ changed(); screen = Screen.Home })
         is Screen.Edit -> EditScreen(db, s.id, { changed(); screen = Screen.Home }, { screen = Screen.Home })
         is Screen.Detail -> DetailScreen(db, s.id, version, changed, { screen = it })
+        is Screen.Reader -> ReaderScreen(db, s.id, changed, { screen = Screen.Home })
     }
 }
 
@@ -235,9 +261,13 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
             }
             fun isToday(s: HabitState) = Schedule.isDue(s.habit, s.dates, s.entries, today) || s.entries[today] != null
             val toggle = { s: HabitState ->
-                val v = s.entries[today] ?: Mark.NONE
-                db.setEntry(s.habit.id, today, if (v == Mark.DONE) Mark.NONE else Mark.DONE)
-                changed()
+                if (s.habit.contentRef != 0) {
+                    go(Screen.Reader(s.habit.id))
+                } else {
+                    val v = s.entries[today] ?: Mark.NONE
+                    db.setEntry(s.habit.id, today, if (v == Mark.DONE) Mark.NONE else Mark.DONE)
+                    changed()
+                }
             }
             val groupIds = groups.map { it.id }.toSet()
             val loose = states.filter { it.habit.groupId !in groupIds }
@@ -331,7 +361,8 @@ fun SectionTitle(text: String) {
 fun HabitRow(s: HabitState, today: Long, times: IntArray, now: Int, active: Boolean, toggle: () -> Unit, open: () -> Unit) {
     val color = Color(s.habit.color)
     val value = s.entries[today] ?: Mark.NONE
-    val score = (Schedule.score(s.habit, s.dates, s.entries, today) * 100).roundToInt()
+    val score = (Schedule.score(s.habit, s.dates, s.entries, today, s.partials) * 100).roundToInt()
+    val readPercent = if (s.habit.contentRef != 0 && value == Mark.NONE) ((s.partials[today] ?: 0) / 10.0).roundToInt() else 0
     val windowed = Schedule.hasWindow(s.habit)
     val phase = Schedule.phase(s.habit, times, now)
     val missed = active && windowed && phase == Phase.CLOSED && value == Mark.NONE
@@ -356,6 +387,7 @@ fun HabitRow(s: HabitState, today: Long, times: IntArray, now: Int, active: Bool
         ) {
             if (value == Mark.DONE) Icon(Icons.Default.Check, "منجزة", tint = Color.White)
             if (value == Mark.EXCUSED) Text("ع", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (readPercent > 0) Text("$readPercent", style = MaterialTheme.typography.labelMedium, color = color)
         }
         Column(Modifier.weight(1f)) {
             Text(s.habit.name, style = MaterialTheme.typography.titleMedium)

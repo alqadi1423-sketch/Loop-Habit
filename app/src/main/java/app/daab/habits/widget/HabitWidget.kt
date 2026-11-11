@@ -7,6 +7,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.RemoteViews
 import app.daab.habits.R
 import app.daab.habits.data.Anchor
@@ -85,6 +86,17 @@ class HabitWidget : AppWidgetProvider() {
             )
         }
 
+        /** Opens the reading of a habit instead of marking it. */
+        private fun read(ctx: Context, widgetId: Int, habitId: Long): PendingIntent {
+            val i = Intent(ctx, MainActivity::class.java)
+                .setData(Uri.parse("daab://reader/$habitId"))
+                .putExtra(MainActivity.EXTRA_READER, habitId)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            return PendingIntent.getActivity(
+                ctx, widgetId, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
         private class Slot(val habit: Habit, val value: Int, val phase: Int, val start: Int)
 
         fun render(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
@@ -106,8 +118,19 @@ class HabitWidget : AppWidgetProvider() {
                 views.setOnClickPendingIntent(R.id.widget_root, click)
             }
 
-            fun pending(h: Habit) = show(NEUTRAL, h.color, "○", h.name, tap(ctx, widgetId, h.id))
-            fun done(h: Habit) = show(h.color, WHITE, "✓", h.name, tap(ctx, widgetId, h.id))
+            fun pending(h: Habit) {
+                if (h.contentRef != 0) {
+                    val percent = (db.partials(h.id)[today] ?: 0) / 10
+                    show(NEUTRAL, h.color, if (percent > 0) "$percent%" else "○", h.name, read(ctx, widgetId, h.id))
+                } else {
+                    show(NEUTRAL, h.color, "○", h.name, tap(ctx, widgetId, h.id))
+                }
+            }
+
+            fun done(h: Habit) = show(
+                h.color, WHITE, "✓", h.name,
+                if (h.contentRef != 0) read(ctx, widgetId, h.id) else tap(ctx, widgetId, h.id)
+            )
 
             if (boundGroup == 0L && boundHabit != ALL_HABITS) {
                 val h = db.habit(boundHabit)

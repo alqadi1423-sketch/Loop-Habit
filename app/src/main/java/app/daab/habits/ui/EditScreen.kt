@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -59,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import app.daab.habits.data.Adhkar
 import app.daab.habits.data.Anchor
 import app.daab.habits.data.Db
 import app.daab.habits.data.Habit
@@ -93,6 +96,9 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
     var startValue by remember { mutableIntStateOf(original?.startValue ?: 0) }
     var endKind by remember { mutableIntStateOf(original?.endKind ?: Anchor.NONE) }
     var endValue by remember { mutableIntStateOf(original?.endValue ?: 0) }
+    var contentRef by remember { mutableIntStateOf(original?.contentRef ?: 0) }
+    var contentPart by remember { mutableIntStateOf(original?.contentPart ?: 0) }
+    var pickContent by remember { mutableStateOf(false) }
     var pickAnchor by remember { mutableIntStateOf(0) }
     var pickAnchorClock by remember { mutableIntStateOf(0) }
     var nameError by remember { mutableStateOf(false) }
@@ -111,7 +117,8 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
             weekdays = if (weekdays == 0) 127 else weekdays,
             perWeek = perWeek, reminder = reminder,
             groupId = groupId, startKind = startKind, startValue = startValue,
-            endKind = endKind, endValue = endValue
+            endKind = endKind, endValue = endValue,
+            contentRef = contentRef, contentPart = contentPart
         )
         val newId = db.save(h)
         db.setDates(newId, if (kind == Kind.DATES) dates else emptySet())
@@ -205,6 +212,11 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
                 }
             }
 
+            Text("ما يفتحه الضغط على العادة", style = MaterialTheme.typography.labelLarge)
+            OutlinedButton(onClick = { pickContent = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (contentRef == 0) "لا شيء، تُعلَّم بضغطة" else Adhkar.title(ctx, contentRef, contentPart))
+            }
+
             Text("وقت الظهور في اليوم", style = MaterialTheme.typography.labelLarge)
             Text(
                 "تظهر العادة في المربع داخل هذا الوقت فقط، وبعده تُسجل فائتة.",
@@ -266,6 +278,30 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { pickTime = false }) { Text("إلغاء") } },
             text = { TimePicker(state = state) }
+        )
+    }
+
+    if (pickContent) {
+        val categories = remember { Adhkar.categories(ctx) }
+        fun set(ref: Int, part: Int) {
+            contentRef = ref
+            contentPart = part
+            pickContent = false
+        }
+        AlertDialog(
+            onDismissRequest = { pickContent = false },
+            title = { Text("اختر الأذكار") },
+            text = {
+                LazyColumn {
+                    item { TextButton(onClick = { set(0, 0) }) { Text("لا شيء، تُعلَّم بضغطة") } }
+                    item { TextButton(onClick = { set(Adhkar.MORNING_EVENING, Adhkar.PART_MORNING) }) { Text("أذكار الصباح") } }
+                    item { TextButton(onClick = { set(Adhkar.MORNING_EVENING, Adhkar.PART_EVENING) }) { Text("أذكار المساء") } }
+                    items(categories.filter { it.id != Adhkar.MORNING_EVENING }) { c ->
+                        TextButton(onClick = { set(c.id, Adhkar.PART_ALL) }) { Text(c.name) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { pickContent = false }) { Text("إلغاء") } }
         )
     }
 

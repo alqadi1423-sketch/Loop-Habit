@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,9 +53,10 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
     }
     val dates = remember(id, version) { db.dates(id) }
     val entries = remember(id, version) { db.entries(id) }
+    val partials = remember(id, version) { db.partials(id) }
     val today = Schedule.today()
     val color = Color(habit.color)
-    val score = Schedule.score(habit, dates, entries, today)
+    val score = Schedule.score(habit, dates, entries, today, partials)
 
     Scaffold(
         topBar = {
@@ -84,6 +86,10 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            if (habit.contentRef != 0) {
+                Button(onClick = { go(Screen.Reader(id)) }, modifier = Modifier.fillMaxWidth()) { Text("افتح القراءة") }
+            }
+
             Text(
                 "السجل، آخر ستة أسابيع",
                 style = MaterialTheme.typography.labelLarge,
@@ -112,6 +118,7 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
                         val look = when {
                             value == Mark.DONE -> base.background(color)
                             value == Mark.EXCUSED -> base.border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant, shape)
+                            (partials[day] ?: 0) > 0 -> base.background(color.copy(alpha = 0.35f))
                             planned && editable -> base.background(MaterialTheme.colorScheme.surfaceVariant)
                             planned -> base.border(1.dp, MaterialTheme.colorScheme.surfaceVariant, shape)
                             else -> base

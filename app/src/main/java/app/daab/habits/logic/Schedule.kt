@@ -80,10 +80,14 @@ object Schedule {
 
     /**
      * Strength from 0 to 1. Each planned day pulls the score toward 1 when done and toward 0
-     * when missed, with older days weighing less. Excused days are skipped. The current day
+     * when missed, with older days weighing less. A reading left unfinished counts by the
+     * share that was read. Excused days are skipped. The current day
      * only counts once it is done, so an unfinished today never lowers the score.
      */
-    fun score(h: Habit, dates: Set<Long>, entries: Map<Long, Int>, today: Long): Double {
+    fun score(
+        h: Habit, dates: Set<Long>, entries: Map<Long, Int>, today: Long,
+        partials: Map<Long, Int> = emptyMap()
+    ): Double {
         var s = 0.0
         if (h.kind == Kind.PER_WEEK) {
             val keep = 0.5.pow(1.0 / 4.0)
@@ -102,7 +106,8 @@ object Schedule {
             val v = entries[d] ?: Mark.NONE
             if (v == Mark.EXCUSED) continue
             if (d == today && v != Mark.DONE) continue
-            s = s * keep + (if (v == Mark.DONE) 1.0 else 0.0) * (1 - keep)
+            val share = if (v == Mark.DONE) 1.0 else (partials[d] ?: 0) / 1000.0
+            s = s * keep + share * (1 - keep)
         }
         return s
     }
