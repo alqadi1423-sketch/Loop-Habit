@@ -130,6 +130,67 @@ object Schedule {
         return s
     }
 
+    /**
+     * The strength as it stood on each day from the habit's first day to today, in one pass.
+     * Index 0 is the first day. Used for the strength chart and the monthly and yearly change.
+     */
+    fun scoreSeries(
+        h: Habit, dates: Set<Long>, entries: Map<Long, Int>, today: Long, partials: Map<Long, Int>
+    ): DoubleArray {
+        val n = (today - h.created + 1).toInt().coerceAtLeast(1)
+        val out = DoubleArray(n)
+        var s = 0.0
+        if (h.kind == Kind.PER_WEEK) {
+            val keep = 0.5.pow(1.0 / 4.0)
+            for (i in 0 until n) {
+                val d = h.created + i
+                if (d == weekStart(d) + 6 || d == today) {
+                    val ratio = min(1.0, doneInWeek(entries, d).toDouble() / h.perWeek.coerceAtLeast(1))
+                    if (d != today || ratio > s || d == weekStart(d) + 6) s = s * keep + ratio * (1 - keep)
+                }
+                out[i] = s
+            }
+            return out
+        }
+        val keep = 0.5.pow(1.0 / 13.0)
+        for (i in 0 until n) {
+            val d = h.created + i
+            if (isScheduled(h, dates, d)) {
+                val v = entries[d] ?: Mark.NONE
+                if (v != Mark.EXCUSED && !(d == today && v != Mark.DONE)) {
+                    val share = if (v == Mark.DONE) 1.0 else (partials[d] ?: 0) / 1000.0
+                    s = s * keep + share * (1 - keep)
+                }
+            }
+            out[i] = s
+        }
+        return out
+    }
+
+    /** Every unbroken run of planned days done, as first day, last day and length, longest first. */
+    fun streaks(h: Habit, dates: Set<Long>, entries: Map<Long, Int>, today: Long): List<Triple<Long, Long, Int>> {
+        val out = ArrayList<Triple<Long, Long, Int>>()
+        var start = -1L
+        var last = -1L
+        var length = 0
+        for (d in h.created..today) {
+            if (!isScheduled(h, dates, d)) continue
+            val v = entries[d] ?: Mark.NONE
+            if (v == Mark.DONE) {
+                if (length == 0) start = d
+                last = d
+                length++
+            } else if (v == Mark.EXCUSED || d == today) {
+                continue
+            } else if (length > 0) {
+                out.add(Triple(start, last, length))
+                length = 0
+            }
+        }
+        if (length > 0) out.add(Triple(start, last, length))
+        return out.sortedByDescending { it.third }
+    }
+
     /** Consecutive planned days done, counting back from today. */
     fun streak(h: Habit, dates: Set<Long>, entries: Map<Long, Int>, today: Long): Int {
         var n = 0

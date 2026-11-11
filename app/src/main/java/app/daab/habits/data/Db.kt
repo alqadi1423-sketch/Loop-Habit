@@ -411,20 +411,20 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
     }
 
     fun addPrayerGroup(today: Long) {
-        val color = Palette.colors[0]
-        val g = saveGroup(Group(name = "الصلوات", color = color, position = groups().size))
-        addToGroup(g, "الفجر", color, today, 0, 1)
-        addToGroup(g, "الظهر", color, today, 2, 3)
-        addToGroup(g, "العصر", color, today, 3, 4)
-        addToGroup(g, "المغرب", color, today, 4, 5)
-        addToGroup(g, "العشاء", color, today, 5, -1)
+        val p = Palette.colors
+        val g = saveGroup(Group(name = "الصلوات", color = p[0], position = groups().size))
+        addToGroup(g, "الفجر", p[1], today, 0, 1)
+        addToGroup(g, "الظهر", p[5], today, 2, 3)
+        addToGroup(g, "العصر", p[4], today, 3, 4)
+        addToGroup(g, "المغرب", p[3], today, 4, 5)
+        addToGroup(g, "العشاء", p[2], today, 5, -1)
     }
 
     fun addAdhkarGroup(today: Long) {
         val color = Palette.colors[2]
         val g = saveGroup(Group(name = "الأذكار", color = color, position = groups().size))
-        addToGroup(g, "أذكار الصباح", color, today, 0, 2, Adhkar.MORNING_EVENING, Adhkar.PART_MORNING)
-        addToGroup(g, "أذكار المساء", color, today, 3, -1, Adhkar.MORNING_EVENING, Adhkar.PART_EVENING)
+        addToGroup(g, "أذكار الصباح", Palette.colors[8], today, 0, 2, Adhkar.MORNING_EVENING, Adhkar.PART_MORNING)
+        addToGroup(g, "أذكار المساء", Palette.colors[6], today, 3, -1, Adhkar.MORNING_EVENING, Adhkar.PART_EVENING)
     }
 
     fun dates(habitId: Long): Set<Long> {
@@ -458,6 +458,24 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             while (c.moveToNext()) out[c.getLong(0)] = c.getInt(1)
         }
         return out
+    }
+
+    /** Writes many days at once, leaving days that already carry a mark as they are. */
+    fun addEntries(habitId: Long, marks: Map<Long, Int>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for ((day, value) in marks) {
+                db.insertWithOnConflict("entries", null, ContentValues().apply {
+                    put("habit_id", habitId)
+                    put("day", day)
+                    put("value", value)
+                }, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     fun setEntry(habitId: Long, day: Long, value: Int) {

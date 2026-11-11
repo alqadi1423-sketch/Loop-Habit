@@ -73,6 +73,10 @@ object Palette {
         0xFFD85A30.toInt(),
         0xFFBA7517.toInt(),
         0xFF639922.toInt(),
-        0xFF5F5E5A.toInt()
+        0xFF5F5E5A.toInt(),
+        0xFFB5382F.toInt(),
+        0xFF2A8C9C.toInt(),
+        0xFF8E8B1F.toInt(),
+        0xFF9A4FB3.toInt()
     )
 }

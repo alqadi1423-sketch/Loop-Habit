@@ -88,7 +88,9 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
     val ctx = LocalContext.current
     val original = remember(id) { if (id == 0L) null else db.habit(id) }
     var name by remember { mutableStateOf(original?.name ?: if (quranPreset) "ورد القرآن" else "") }
-    var color by remember { mutableIntStateOf(original?.color ?: Palette.colors[0]) }
+    var color by remember {
+        mutableIntStateOf(original?.color ?: Palette.colors[db.habits(true).size % Palette.colors.size])
+    }
     var kind by remember { mutableIntStateOf(original?.kind ?: Kind.DAILY) }
     var weekdays by remember { mutableIntStateOf(original?.weekdays ?: 127) }
     var perWeek by remember { mutableIntStateOf(original?.perWeek ?: 3) }

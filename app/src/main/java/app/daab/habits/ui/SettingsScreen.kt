@@ -39,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.daab.habits.data.Db
+import app.daab.habits.data.LoopImport
+import java.io.File
 import app.daab.habits.data.prayerNames
 import app.daab.habits.logic.City
 import app.daab.habits.logic.PrayerTimes
@@ -123,6 +125,22 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
         }
     }
 
+    val loopImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val copy = File(ctx.cacheDir, "loop-import.db")
+            try {
+                ctx.contentResolver.openInputStream(uri)?.use { input -> copy.outputStream().use { input.copyTo(it) } }
+                val result = LoopImport.run(db, copy, Schedule.today())
+                refresh()
+                Toast.makeText(ctx, "نُقلت ${result.habits} عادة و${result.days} يومًا من سجلها", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "الملف ليس نسخة احتياطية كاملة من ذلك التطبيق", Toast.LENGTH_LONG).show()
+            } finally {
+                copy.delete()
+            }
+        }
+    }
+
     Scaffold(
         topBar = { TopAppBar(title = { Text("الإعدادات") }) },
         bottomBar = { BottomNav(Screen.Settings, go) }
@@ -199,6 +217,14 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
                 SettingRow("تصدير السجل جدولًا", detail = "ملف يُفتح في برامج الجداول، ولا يُستعاد منه") { csvExporter.launch("daab-log.csv") }
                 Divider()
                 SettingRow("العادات المؤرشفة") { go(Screen.Archived) }
+            }
+
+            SectionLabel("نقل السجل من تطبيق آخر")
+            Panel(padding = 0.dp) {
+                SettingRow(
+                    "استيراد نسخة Loop",
+                    detail = "في ذلك التطبيق: الإعدادات ثم «صدر نسخة احتياطية كاملة»، ثم اختر الملف هنا. تُضاف عاداته وسجلها كله، ولا يُحذف شيء مما عندك."
+                ) { loopImporter.launch(arrayOf("*/*")) }
             }
             Spacer(Modifier.height(24.dp))
         }
