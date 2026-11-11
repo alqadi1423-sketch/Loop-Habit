@@ -159,7 +159,7 @@ fun App(resumes: Int, readerRequest: Long, readerHandled: () -> Unit) {
         HabitWidget.updateAll(ctx)
     }
     val go = { next: Screen ->
-        if (next == Screen.Home || next == Screen.Counters || next == Screen.Settings ||
+        if (next == Screen.Home || next == Screen.Settings ||
             next == Screen.Adhkar || next == Screen.QuranTab
         ) tab = next
         screen = next
@@ -176,7 +176,7 @@ fun App(resumes: Int, readerRequest: Long, readerHandled: () -> Unit) {
 
     when (val s = screen) {
         is Screen.Home -> HomeScreen(db, version + resumes, changed, go)
-        is Screen.Counters -> CountersScreen(db, version, changed, go)
+        is Screen.Counters -> CountersScreen(db, version, changed, { go(tab) })
         is Screen.Adhkar -> AdhkarScreen(db, version, go)
         is Screen.QuranTab -> QuranTab(db, version, go)
         is Screen.AdhkarRead -> ReaderScreen(db, 0, changed, { go(tab) }, s)
@@ -206,10 +206,6 @@ fun BottomNav(current: Screen, go: (Screen) -> Unit) {
         NavigationBarItem(
             selected = current == Screen.QuranTab, onClick = { go(Screen.QuranTab) },
             icon = { Icon(BookIcon, null) }, label = { Text("القرآن") }
-        )
-        NavigationBarItem(
-            selected = current == Screen.Counters, onClick = { go(Screen.Counters) },
-            icon = { Icon(BarsIcon, null) }, label = { Text("العدّادات") }
         )
         NavigationBarItem(
             selected = current == Screen.Settings, onClick = { go(Screen.Settings) },

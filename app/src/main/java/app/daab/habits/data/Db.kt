@@ -8,7 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import app.daab.habits.logic.Settings
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 6) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 7) {
 
     companion object {
         @Volatile
@@ -44,6 +44,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         addQuran(db)
         addExtras(db)
         addCounters(db)
+        addCounterGroup(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -52,6 +53,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         if (oldVersion < 4) addQuran(db)
         if (oldVersion < 5) addExtras(db)
         if (oldVersion < 6) addCounters(db)
+        if (oldVersion < 7) addCounterGroup(db)
+    }
+
+    private fun addCounterGroup(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE counters ADD COLUMN group_id INTEGER NOT NULL DEFAULT 0")
     }
 
     private fun addCounters(db: SQLiteDatabase) {
@@ -62,8 +68,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
 
     fun counters(): List<Counter> {
         val out = ArrayList<Counter>()
-        readableDatabase.rawQuery("SELECT id, name, position FROM counters ORDER BY position, id", null).use { c ->
-            while (c.moveToNext()) out.add(Counter(c.getLong(0), c.getString(1), c.getInt(2)))
+        readableDatabase.rawQuery("SELECT id, name, position, group_id FROM counters ORDER BY position, id", null).use { c ->
+            while (c.moveToNext()) out.add(Counter(c.getLong(0), c.getString(1), c.getInt(2), c.getLong(3)))
         }
         return out
     }
@@ -72,6 +78,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         val v = ContentValues().apply {
             put("name", counter.name)
             put("position", counter.position)
+            put("group_id", counter.groupId)
         }
         return if (counter.id == 0L) writableDatabase.insert("counters", null, v)
         else {
@@ -391,6 +398,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
     fun deleteGroup(id: Long) {
         val db = writableDatabase
         db.execSQL("UPDATE habits SET group_id=0 WHERE group_id=?", arrayOf(id.toString()))
+        db.execSQL("UPDATE counters SET group_id=0 WHERE group_id=?", arrayOf(id.toString()))
         db.delete("groups", "id=?", arrayOf(id.toString()))
     }
 
@@ -517,14 +525,14 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         val root = JSONObject()
         root.put("app", "daab")
         if (settings != null) root.put("settings", settings)
-        root.put("version", 6)
+        root.put("version", 7)
         val gs = JSONArray()
         for (g in groups()) {
             gs.put(JSONObject().put("id", g.id).put("name", g.name).put("color", g.color).put("position", g.position))
         }
         root.put("groups", gs)
         val cts = JSONArray()
-        for (c in counters()) cts.put(JSONObject().put("id", c.id).put("name", c.name).put("position", c.position))
+        for (c in counters()) cts.put(JSONObject().put("id", c.id).put("name", c.name).put("position", c.position).put("groupId", c.groupId))
         root.put("counters", cts)
         val hs = JSONArray()
         for (h in habits(true)) {
@@ -615,6 +623,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                     put("id", o.getLong("id"))
                     put("name", o.getString("name"))
                     put("position", o.optInt("position"))
+                    put("group_id", o.optLong("groupId"))
                 })
             }
             val groupIds = HashMap<Long, Long>()

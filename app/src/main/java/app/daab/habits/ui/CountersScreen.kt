@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -58,9 +60,10 @@ private fun Signed(value: Int, style: androidx.compose.ui.text.TextStyle, color:
 
 /** Running totals. Each counter adds up its habits, every completion counting by the habit's effect. */
 @Composable
-fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) {
+fun CountersScreen(db: Db, version: Int, changed: () -> Unit, back: () -> Unit) {
     val counters = remember(version) { db.counters() }
     val habits = remember(version) { db.habits(true) }
+    val groups = remember(version) { db.groups() }
     val done = remember(version) { habits.associate { it.id to db.doneCount(it.id) } }
     var edit by remember { mutableStateOf<Counter?>(null) }
     var linkTo by remember { mutableStateOf<Counter?>(null) }
@@ -71,12 +74,12 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
         topBar = {
             TopAppBar(
                 title = { Text("العدّادات") },
+                navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") } },
                 actions = {
                     IconButton(onClick = { edit = Counter(position = counters.size) }) { Icon(Icons.Default.Add, "عدّاد جديد") }
                 }
             )
         },
-        bottomBar = { BottomNav(Screen.Counters, go) }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
             if (counters.isEmpty()) {
@@ -119,7 +122,7 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                         )
                     }
                     Text(
-                        "المجموع الكلي",
+                        "المجموع الكلي" + (groups.firstOrNull { it.id == c.groupId }?.let { "  ·  يظهر في مجموعة " + it.name } ?: ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
@@ -169,10 +172,12 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
     edit?.let { c ->
         var name by remember(c) { mutableStateOf(c.name) }
         var error by remember(c) { mutableStateOf(false) }
+        var groupId by remember(c) { mutableStateOf(c.groupId) }
         AlertDialog(
             onDismissRequest = { edit = null },
             title = { Text(if (c.id == 0L) "عدّاد جديد" else "تعديل العدّاد") },
             text = {
+              Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; error = false },
@@ -184,12 +189,27 @@ fun CountersScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Un
                     },
                     singleLine = true
                 )
+                Text(
+                    "المجموعة التي يظهر فيها في صفحة العادات",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                for ((gid, label) in listOf(0L to "بلا مجموعة، يظهر في تفاصيل عاداته فقط") + groups.map { it.id to it.name }) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { groupId = gid },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = groupId == gid, onClick = { groupId = gid })
+                        Text(label)
+                    }
+                }
+              }
             },
             confirmButton = {
                 TextButton(onClick = {
                     if (name.isBlank()) error = true
                     else {
-                        db.saveCounter(c.copy(name = name.trim()))
+                        db.saveCounter(c.copy(name = name.trim(), groupId = groupId))
                         edit = null
                         changed()
                     }

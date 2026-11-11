@@ -55,7 +55,8 @@ data class Habit(
     val counterEffect: Int = 0
 )
 
-data class Counter(val id: Long = 0, val name: String = "", val position: Int = 0)
+/** [groupId] is the group the counter is shown under on the habits page, or 0 for none. */
+data class Counter(val id: Long = 0, val name: String = "", val position: Int = 0, val groupId: Long = 0)
 
 data class Group(
     val id: Long = 0,

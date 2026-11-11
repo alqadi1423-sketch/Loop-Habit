@@ -206,6 +206,11 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
                 }
             }
 
+            SectionLabel("العدّادات")
+            Panel(padding = 0.dp) {
+                SettingRow("إدارة العدّادات", detail = "إنشاء عدّاد وربط العادات به واختيار مجموعته") { go(Screen.Counters) }
+            }
+
             SectionLabel("البيانات")
             Panel(padding = 0.dp) {
                 SettingRow("حفظ نسخة احتياطية", detail = "ملف فيه كل عاداتك وسجلها وإعداداتك") { exporter.launch("daab-backup.json") }

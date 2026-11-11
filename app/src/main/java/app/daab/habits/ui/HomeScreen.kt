@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -85,6 +86,11 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
     val now = Schedule.nowMinutes()
     val all = remember(version, minute) { loadStates(db) }
     val groups = remember(version) { db.groups() }
+    val counters = remember(version) { db.counters() }
+    val counterTotals = remember(version) {
+        val linked = db.habits(true).filter { it.counterId != 0L }
+        counters.associate { c -> c.id to linked.filter { it.counterId == c.id }.sumOf { db.doneCount(it.id) * it.counterEffect } }
+    }
     val times = remember(version, today) { PrayerTimes.forDay(ctx, today) }
     var menu by remember { mutableStateOf(false) }
     var editGroup by remember { mutableStateOf<Group?>(null) }
@@ -238,6 +244,31 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
                     shown.forEachIndexed { i, s ->
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         HabitLine(db, s, today, now, times, changed, go)
+                    }
+                    for (c in counters.filter { it.groupId == g.id }) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Row(
+                            Modifier.fillMaxWidth().clickable { go(Screen.Counters) }
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "عدّاد", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    c.name, style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Text(
+                                "\u200E" + (counterTotals[c.id] ?: 0),
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                 }
             }

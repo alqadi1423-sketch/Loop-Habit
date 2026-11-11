@@ -102,6 +102,11 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
     fun scoreAgo(days: Int) = series.getOrElse(series.size - 1 - days) { 0.0 }
     val total = remember(id, version) { entries.values.count { it == Mark.DONE } }
     val streaks = remember(id, version, today) { Schedule.streaks(habit, dates, entries, today) }
+    val counter = remember(id, version) { if (habit.counterId == 0L) null else db.counters().firstOrNull { it.id == habit.counterId } }
+    val counterTotal = remember(id, version) {
+        if (counter == null) 0
+        else db.habits(true).filter { it.counterId == counter.id }.sumOf { db.doneCount(it.id) * it.counterEffect }
+    }
     var byMonth by remember { mutableStateOf(false) }
     var monthOffset by remember { mutableIntStateOf(0) }
 
@@ -133,6 +138,17 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
 
             if (habit.contentRef != 0) {
                 Button(onClick = { go(Screen.Reader(id)) }, modifier = Modifier.fillMaxWidth()) { Text("افتح القراءة") }
+            }
+
+            if (counter != null) {
+                Panel {
+                    Heading("العدّاد: " + counter.name, tint)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Stat("\u200E$counterTotal", "مجموع العدّاد", tint, Modifier.weight(1f))
+                        Stat("\u200E" + (if (habit.counterEffect > 0) "+" else "") + habit.counterEffect, "أثر كل إنجاز", tint, Modifier.weight(1f))
+                        Stat("\u200E" + total * habit.counterEffect, "نصيب هذه العادة", tint, Modifier.weight(1f))
+                    }
+                }
             }
 
             Panel {
