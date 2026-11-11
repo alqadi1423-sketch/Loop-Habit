@@ -1,17 +1,52 @@
 package app.daab.habits.logic
 
+import app.daab.habits.data.Anchor
 import app.daab.habits.data.Habit
 import app.daab.habits.data.Kind
 import app.daab.habits.data.Mark
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 import kotlin.math.min
 import kotlin.math.pow
 
+object Phase {
+    const val BEFORE = 0
+    const val OPEN = 1
+    const val CLOSED = 2
+}
+
 object Schedule {
 
     fun today(): Long = LocalDate.now().toEpochDay()
+
+    fun nowMinutes(): Int = LocalTime.now().toSecondOfDay() / 60
+
+    fun hasWindow(h: Habit): Boolean = h.startKind != Anchor.NONE || h.endKind != Anchor.NONE
+
+    private fun resolve(kind: Int, value: Int, times: IntArray, fallback: Int): Int = when (kind) {
+        Anchor.CLOCK -> value
+        Anchor.PRAYER -> times[value.coerceIn(0, 5)]
+        else -> fallback
+    }
+
+    /** Start and end of the habit's time window today, in minutes after midnight. */
+    fun window(h: Habit, times: IntArray): Pair<Int, Int> {
+        val start = resolve(h.startKind, h.startValue, times, 0)
+        var end = resolve(h.endKind, h.endValue, times, 1440)
+        if (end <= start) end = 1440
+        return start to end
+    }
+
+    fun phase(h: Habit, times: IntArray, now: Int): Int {
+        val (start, end) = window(h, times)
+        return when {
+            now < start -> Phase.BEFORE
+            now >= end -> Phase.CLOSED
+            else -> Phase.OPEN
+        }
+    }
 
     /** Sunday = 0 ... Saturday = 6 */
     fun weekdayIndex(day: Long): Int = LocalDate.ofEpochDay(day).dayOfWeek.value % 7

@@ -39,7 +39,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,10 +57,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import app.daab.habits.data.Anchor
 import app.daab.habits.data.Db
+import app.daab.habits.data.Group
 import app.daab.habits.data.Habit
 import app.daab.habits.data.Kind
 import app.daab.habits.data.Mark
+import app.daab.habits.data.prayerNames
+import app.daab.habits.logic.Phase
+import app.daab.habits.logic.PrayerTimes
 import app.daab.habits.logic.Schedule
 import app.daab.habits.notify.ReminderReceiver
 import app.daab.habits.widget.HabitWidget
@@ -64,6 +73,7 @@ import kotlin.math.roundToInt
 
 sealed interface Screen {
     data object Home : Screen
+    data object Settings : Screen
     data class Edit(val id: Long) : Screen
     data class Detail(val id: Long) : Screen
 }
@@ -84,6 +94,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         resumes.intValue++
+        HabitWidget.updateAll(this)
     }
 }
 
@@ -100,6 +111,19 @@ fun describe(s: HabitState, today: Long): String = when (s.habit.kind) {
     else -> "${s.dates.count { it >= today }} أيام محددة قادمة"
 }
 
+fun anchorLabel(kind: Int, value: Int, times: IntArray?, empty: String): String = when (kind) {
+    Anchor.CLOCK -> timeText(value)
+    Anchor.PRAYER -> {
+        val i = value.coerceIn(0, 5)
+        if (times == null) prayerNames[i] else prayerNames[i] + " " + timeText(times[i])
+    }
+    else -> empty
+}
+
+fun windowText(h: Habit, times: IntArray): String =
+    "من " + anchorLabel(h.startKind, h.startValue, times, "أول اليوم") +
+        " إلى " + anchorLabel(h.endKind, h.endValue, times, "آخر اليوم")
+
 @Composable
 fun App(resumes: Int) {
     val ctx = LocalContext.current
@@ -115,6 +139,7 @@ fun App(resumes: Int) {
 
     when (val s = screen) {
         is Screen.Home -> HomeScreen(db, version + resumes, changed, { screen = it })
+        is Screen.Settings -> SettingsScreen({ changed(); screen = Screen.Home })
         is Screen.Edit -> EditScreen(db, s.id, { changed(); screen = Screen.Home }, { screen = Screen.Home })
         is Screen.Detail -> DetailScreen(db, s.id, version, changed, { screen = it })
     }
@@ -124,8 +149,12 @@ fun App(resumes: Int) {
 fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) {
     val ctx = LocalContext.current
     val today = Schedule.today()
+    val now = Schedule.nowMinutes()
     val states = remember(version) { loadStates(db) }
+    val groups = remember(version) { db.groups() }
+    val times = remember(version) { PrayerTimes.forDay(ctx, today) }
     var menu by remember { mutableStateOf(false) }
+    var editGroup by remember { mutableStateOf<Group?>(null) }
 
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) {
@@ -158,6 +187,25 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
                 actions = {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "القائمة") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("إضافة مجموعة الصلوات الخمس") }, onClick = {
+                            menu = false
+                            db.addPrayerGroup(today)
+                            changed()
+                        })
+                        DropdownMenuItem(text = { Text("إضافة مجموعة أذكار الصباح والمساء") }, onClick = {
+                            menu = false
+                            db.addAdhkarGroup(today)
+                            changed()
+                        })
+                        DropdownMenuItem(text = { Text("مجموعة جديدة فارغة") }, onClick = {
+                            menu = false
+                            editGroup = Group(position = groups.size)
+                        })
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("المدينة ومواقيت الصلاة") }, onClick = {
+                            menu = false
+                            go(Screen.Settings)
+                        })
                         DropdownMenuItem(text = { Text("حفظ نسخة احتياطية") }, onClick = {
                             menu = false
                             exporter.launch("daab-backup.json")
@@ -175,28 +223,97 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState())) {
-            if (states.isEmpty()) {
+            if (states.isEmpty() && groups.isEmpty()) {
                 Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("ابدأ بأول عادة", style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "اضغط علامة الإضافة، ثم ضع المربع على شاشتك الرئيسية.",
+                        "اضغط علامة الإضافة، أو أضف مجموعة الصلوات من القائمة، ثم ضع المربع على شاشتك الرئيسية.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            val due = states.filter { Schedule.isDue(it.habit, it.dates, it.entries, today) || it.entries[today] != null }
-            val rest = states - due.toSet()
-            if (due.isNotEmpty()) SectionTitle("اليوم")
-            for (s in due) HabitRow(s, today, true, {
+            fun isToday(s: HabitState) = Schedule.isDue(s.habit, s.dates, s.entries, today) || s.entries[today] != null
+            val toggle = { s: HabitState ->
                 val v = s.entries[today] ?: Mark.NONE
                 db.setEntry(s.habit.id, today, if (v == Mark.DONE) Mark.NONE else Mark.DONE)
                 changed()
-            }, { go(Screen.Detail(s.habit.id)) })
+            }
+            val groupIds = groups.map { it.id }.toSet()
+            val loose = states.filter { it.habit.groupId !in groupIds }
+            val looseToday = loose.filter { isToday(it) }
+            if (looseToday.isNotEmpty()) SectionTitle("اليوم")
+            for (s in looseToday) HabitRow(s, today, times, now, true, { toggle(s) }, { go(Screen.Detail(s.habit.id)) })
+
+            for (g in groups) {
+                val members = states.filter { it.habit.groupId == g.id }
+                val done = members.count { it.entries[today] == Mark.DONE }
+                val dueCount = members.count { isToday(it) }
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(g.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Text("$done من $dueCount", style = MaterialTheme.typography.labelLarge, color = Color(g.color))
+                    TextButton(onClick = { editGroup = g }) { Text("تعديل") }
+                }
+                if (members.isEmpty()) {
+                    Text(
+                        "أضف عادة ثم اختر هذه المجموعة لها.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp)
+                    )
+                }
+                for (s in members.filter { isToday(it) }.sortedBy { Schedule.window(it.habit, times).first }) {
+                    HabitRow(s, today, times, now, true, { toggle(s) }, { go(Screen.Detail(s.habit.id)) })
+                }
+            }
+
+            val rest = states.filter { !isToday(it) }
             if (rest.isNotEmpty()) SectionTitle("ليست اليوم")
-            for (s in rest) HabitRow(s, today, false, {}, { go(Screen.Detail(s.habit.id)) })
+            for (s in rest) HabitRow(s, today, times, now, false, {}, { go(Screen.Detail(s.habit.id)) })
             Spacer(Modifier.height(96.dp))
         }
+    }
+
+    editGroup?.let { g ->
+        var name by remember(g) { mutableStateOf(g.name) }
+        var error by remember(g) { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { editGroup = null },
+            title = { Text(if (g.id == 0L) "مجموعة جديدة" else "تعديل المجموعة") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it; error = false },
+                    label = { Text("اسم المجموعة") },
+                    isError = error,
+                    supportingText = { if (error) Text("اكتب اسم المجموعة") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (name.isBlank()) error = true
+                    else {
+                        db.saveGroup(g.copy(name = name.trim()))
+                        editGroup = null
+                        changed()
+                    }
+                }) { Text("حفظ") }
+            },
+            dismissButton = {
+                if (g.id != 0L) {
+                    TextButton(onClick = {
+                        db.deleteGroup(g.id)
+                        editGroup = null
+                        changed()
+                    }) { Text("حذف المجموعة وإبقاء عاداتها") }
+                } else {
+                    TextButton(onClick = { editGroup = null }) { Text("إلغاء") }
+                }
+            }
+        )
     }
 }
 
@@ -211,10 +328,13 @@ fun SectionTitle(text: String) {
 }
 
 @Composable
-fun HabitRow(s: HabitState, today: Long, active: Boolean, toggle: () -> Unit, open: () -> Unit) {
+fun HabitRow(s: HabitState, today: Long, times: IntArray, now: Int, active: Boolean, toggle: () -> Unit, open: () -> Unit) {
     val color = Color(s.habit.color)
     val value = s.entries[today] ?: Mark.NONE
     val score = (Schedule.score(s.habit, s.dates, s.entries, today) * 100).roundToInt()
+    val windowed = Schedule.hasWindow(s.habit)
+    val phase = Schedule.phase(s.habit, times, now)
+    val missed = active && windowed && phase == Phase.CLOSED && value == Mark.NONE
     Row(
         Modifier.fillMaxWidth().clickable(onClick = open).padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -224,7 +344,12 @@ fun HabitRow(s: HabitState, today: Long, active: Boolean, toggle: () -> Unit, op
             Modifier.size(40.dp).clip(CircleShape)
                 .then(
                     if (value == Mark.DONE) Modifier.background(color)
-                    else Modifier.border(2.dp, if (active) color else MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                    else Modifier.border(
+                        2.dp,
+                        if (missed) MaterialTheme.colorScheme.error
+                        else if (active) color else MaterialTheme.colorScheme.surfaceVariant,
+                        CircleShape
+                    )
                 )
                 .clickable(enabled = active, onClick = toggle),
             contentAlignment = Alignment.Center
@@ -234,7 +359,22 @@ fun HabitRow(s: HabitState, today: Long, active: Boolean, toggle: () -> Unit, op
         }
         Column(Modifier.weight(1f)) {
             Text(s.habit.name, style = MaterialTheme.typography.titleMedium)
-            Text(describe(s, today), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (windowed) windowText(s.habit, times) else describe(s, today),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (active && windowed && value == Mark.NONE) {
+                Text(
+                    when (phase) {
+                        Phase.BEFORE -> "لم يحن وقتها"
+                        Phase.OPEN -> "وقتها الآن"
+                        else -> "فائتة، اضغط الدائرة لتعديلها"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (missed) MaterialTheme.colorScheme.error else color
+                )
+            }
         }
         Text("$score%", style = MaterialTheme.typography.labelLarge, color = color)
         Spacer(Modifier.width(2.dp))

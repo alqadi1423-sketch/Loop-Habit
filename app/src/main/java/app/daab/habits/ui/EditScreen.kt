@@ -59,10 +59,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import app.daab.habits.data.Anchor
 import app.daab.habits.data.Db
 import app.daab.habits.data.Habit
 import app.daab.habits.data.Kind
 import app.daab.habits.data.Palette
+import app.daab.habits.data.prayerNames
 import app.daab.habits.logic.Schedule
 import app.daab.habits.notify.ReminderReceiver
 import java.time.LocalDate
@@ -85,6 +87,14 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
     var perWeek by remember { mutableIntStateOf(original?.perWeek ?: 3) }
     var reminder by remember { mutableIntStateOf(original?.reminder ?: -1) }
     var dates by remember { mutableStateOf(if (id == 0L) emptySet() else db.dates(id)) }
+    val groups = remember { db.groups() }
+    var groupId by remember { mutableStateOf(original?.groupId ?: 0L) }
+    var startKind by remember { mutableIntStateOf(original?.startKind ?: Anchor.NONE) }
+    var startValue by remember { mutableIntStateOf(original?.startValue ?: 0) }
+    var endKind by remember { mutableIntStateOf(original?.endKind ?: Anchor.NONE) }
+    var endValue by remember { mutableIntStateOf(original?.endValue ?: 0) }
+    var pickAnchor by remember { mutableIntStateOf(0) }
+    var pickAnchorClock by remember { mutableIntStateOf(0) }
     var nameError by remember { mutableStateOf(false) }
     var pickDate by remember { mutableStateOf(false) }
     var pickTime by remember { mutableStateOf(false) }
@@ -99,7 +109,9 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
         val h = (original ?: Habit(created = Schedule.today(), position = db.habits(true).size)).copy(
             name = name.trim(), color = color, kind = kind,
             weekdays = if (weekdays == 0) 127 else weekdays,
-            perWeek = perWeek, reminder = reminder
+            perWeek = perWeek, reminder = reminder,
+            groupId = groupId, startKind = startKind, startValue = startValue,
+            endKind = endKind, endValue = endValue
         )
         val newId = db.save(h)
         db.setDates(newId, if (kind == Kind.DATES) dates else emptySet())
@@ -183,6 +195,31 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
                 OutlinedButton(onClick = { pickDate = true }) { Text("إضافة يوم") }
             }
 
+            if (groups.isNotEmpty()) {
+                Text("المجموعة", style = MaterialTheme.typography.labelLarge)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = groupId == 0L, onClick = { groupId = 0L }, label = { Text("بلا مجموعة") })
+                    for (g in groups) {
+                        FilterChip(selected = groupId == g.id, onClick = { groupId = g.id }, label = { Text(g.name) })
+                    }
+                }
+            }
+
+            Text("وقت الظهور في اليوم", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "تظهر العادة في المربع داخل هذا الوقت فقط، وبعده تُسجل فائتة.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = { pickAnchor = 1 }, modifier = Modifier.weight(1f)) {
+                    Text("من: " + anchorLabel(startKind, startValue, null, "أول اليوم"))
+                }
+                OutlinedButton(onClick = { pickAnchor = 2 }, modifier = Modifier.weight(1f)) {
+                    Text("إلى: " + anchorLabel(endKind, endValue, null, "آخر اليوم"))
+                }
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("تذكير", style = MaterialTheme.typography.labelLarge)
@@ -228,6 +265,60 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
                 }) { Text("تم") }
             },
             dismissButton = { TextButton(onClick = { pickTime = false }) { Text("إلغاء") } },
+            text = { TimePicker(state = state) }
+        )
+    }
+
+    if (pickAnchor != 0) {
+        val isStart = pickAnchor == 1
+        fun set(kind: Int, value: Int) {
+            if (isStart) {
+                startKind = kind
+                startValue = value
+            } else {
+                endKind = kind
+                endValue = value
+            }
+            pickAnchor = 0
+        }
+        AlertDialog(
+            onDismissRequest = { pickAnchor = 0 },
+            title = { Text(if (isStart) "يبدأ وقتها" else "ينتهي وقتها") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    TextButton(onClick = { set(Anchor.NONE, 0) }) { Text(if (isStart) "أول اليوم" else "آخر اليوم") }
+                    for (i in prayerNames.indices) {
+                        TextButton(onClick = { set(Anchor.PRAYER, i) }) { Text(prayerNames[i]) }
+                    }
+                    TextButton(onClick = {
+                        pickAnchorClock = pickAnchor
+                        pickAnchor = 0
+                    }) { Text("ساعة أحددها") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { pickAnchor = 0 }) { Text("إلغاء") } }
+        )
+    }
+
+    if (pickAnchorClock != 0) {
+        val isStart = pickAnchorClock == 1
+        val state = rememberTimePickerState(initialHour = if (isStart) 6 else 12, initialMinute = 0, is24Hour = false)
+        AlertDialog(
+            onDismissRequest = { pickAnchorClock = 0 },
+            confirmButton = {
+                TextButton(onClick = {
+                    val minutes = state.hour * 60 + state.minute
+                    if (isStart) {
+                        startKind = Anchor.CLOCK
+                        startValue = minutes
+                    } else {
+                        endKind = Anchor.CLOCK
+                        endValue = minutes
+                    }
+                    pickAnchorClock = 0
+                }) { Text("تم") }
+            },
+            dismissButton = { TextButton(onClick = { pickAnchorClock = 0 }) { Text("إلغاء") } },
             text = { TimePicker(state = state) }
         )
     }

@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 import org.json.JSONObject
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 1) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 2) {
 
     companion object {
         @Volatile
@@ -17,6 +17,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             instance ?: synchronized(this) {
                 instance ?: Db(ctx.applicationContext).also { instance = it }
             }
+
+        private val windowColumns = listOf("group_id", "start_kind", "start_value", "end_kind", "end_value")
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -29,28 +31,41 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         )
         db.execSQL("CREATE TABLE habit_dates(habit_id INTEGER NOT NULL, day INTEGER NOT NULL, PRIMARY KEY(habit_id, day))")
         db.execSQL("CREATE TABLE entries(habit_id INTEGER NOT NULL, day INTEGER NOT NULL, value INTEGER NOT NULL, note TEXT, PRIMARY KEY(habit_id, day))")
+        addGroups(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) addGroups(db)
+    }
+
+    private fun addGroups(db: SQLiteDatabase) {
+        for (c in windowColumns) db.execSQL("ALTER TABLE habits ADD COLUMN $c INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE groups(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color INTEGER NOT NULL, position INTEGER NOT NULL)")
     }
 
     fun habits(includeArchived: Boolean = false): List<Habit> {
         val out = ArrayList<Habit>()
         val where = if (includeArchived) null else "archived=0"
         readableDatabase.query("habits", null, where, null, null, null, "position, id").use { c ->
+            fun int(name: String) = c.getInt(c.getColumnIndexOrThrow(name))
             while (c.moveToNext()) {
                 out.add(
                     Habit(
                         id = c.getLong(c.getColumnIndexOrThrow("id")),
                         name = c.getString(c.getColumnIndexOrThrow("name")),
-                        color = c.getInt(c.getColumnIndexOrThrow("color")),
-                        kind = c.getInt(c.getColumnIndexOrThrow("kind")),
-                        weekdays = c.getInt(c.getColumnIndexOrThrow("weekdays")),
-                        perWeek = c.getInt(c.getColumnIndexOrThrow("per_week")),
-                        reminder = c.getInt(c.getColumnIndexOrThrow("reminder")),
-                        archived = c.getInt(c.getColumnIndexOrThrow("archived")) != 0,
-                        position = c.getInt(c.getColumnIndexOrThrow("position")),
-                        created = c.getLong(c.getColumnIndexOrThrow("created"))
+                        color = int("color"),
+                        kind = int("kind"),
+                        weekdays = int("weekdays"),
+                        perWeek = int("per_week"),
+                        reminder = int("reminder"),
+                        archived = int("archived") != 0,
+                        position = int("position"),
+                        created = c.getLong(c.getColumnIndexOrThrow("created")),
+                        groupId = c.getLong(c.getColumnIndexOrThrow("group_id")),
+                        startKind = int("start_kind"),
+                        startValue = int("start_value"),
+                        endKind = int("end_kind"),
+                        endValue = int("end_value")
                     )
                 )
             }
@@ -70,6 +85,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         put("archived", if (h.archived) 1 else 0)
         put("position", h.position)
         put("created", h.created)
+        put("group_id", h.groupId)
+        put("start_kind", h.startKind)
+        put("start_value", h.startValue)
+        put("end_kind", h.endKind)
+        put("end_value", h.endValue)
     }
 
     fun save(h: Habit): Long {
@@ -88,6 +108,65 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         db.delete("habits", "id=?", a)
         db.delete("habit_dates", "habit_id=?", a)
         db.delete("entries", "habit_id=?", a)
+    }
+
+    fun groups(): List<Group> {
+        val out = ArrayList<Group>()
+        readableDatabase.query("groups", null, null, null, null, null, "position, id").use { c ->
+            while (c.moveToNext()) {
+                out.add(Group(c.getLong(0), c.getString(1), c.getInt(2), c.getInt(3)))
+            }
+        }
+        return out
+    }
+
+    fun saveGroup(g: Group): Long {
+        val v = ContentValues().apply {
+            put("name", g.name)
+            put("color", g.color)
+            put("position", g.position)
+        }
+        return if (g.id == 0L) writableDatabase.insert("groups", null, v)
+        else {
+            writableDatabase.update("groups", v, "id=?", arrayOf(g.id.toString()))
+            g.id
+        }
+    }
+
+    /** Removes the group and leaves its habits as standalone habits with their records intact. */
+    fun deleteGroup(id: Long) {
+        val db = writableDatabase
+        db.execSQL("UPDATE habits SET group_id=0 WHERE group_id=?", arrayOf(id.toString()))
+        db.delete("groups", "id=?", arrayOf(id.toString()))
+    }
+
+    private fun addToGroup(groupId: Long, name: String, color: Int, today: Long, startPrayer: Int, endPrayer: Int) {
+        save(
+            Habit(
+                name = name, color = color, created = today, groupId = groupId,
+                position = habits(true).size,
+                startKind = Anchor.PRAYER, startValue = startPrayer,
+                endKind = if (endPrayer < 0) Anchor.NONE else Anchor.PRAYER,
+                endValue = if (endPrayer < 0) 0 else endPrayer
+            )
+        )
+    }
+
+    fun addPrayerGroup(today: Long) {
+        val color = Palette.colors[0]
+        val g = saveGroup(Group(name = "الصلوات", color = color, position = groups().size))
+        addToGroup(g, "الفجر", color, today, 0, 1)
+        addToGroup(g, "الظهر", color, today, 2, 3)
+        addToGroup(g, "العصر", color, today, 3, 4)
+        addToGroup(g, "المغرب", color, today, 4, 5)
+        addToGroup(g, "العشاء", color, today, 5, -1)
+    }
+
+    fun addAdhkarGroup(today: Long) {
+        val color = Palette.colors[2]
+        val g = saveGroup(Group(name = "الأذكار", color = color, position = groups().size))
+        addToGroup(g, "أذكار الصباح", color, today, 0, 2)
+        addToGroup(g, "أذكار المساء", color, today, 3, -1)
     }
 
     fun dates(habitId: Long): Set<Long> {
@@ -139,11 +218,15 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
     fun exportJson(): String {
         val root = JSONObject()
         root.put("app", "daab")
-        root.put("version", 1)
+        root.put("version", 2)
+        val gs = JSONArray()
+        for (g in groups()) {
+            gs.put(JSONObject().put("id", g.id).put("name", g.name).put("color", g.color).put("position", g.position))
+        }
+        root.put("groups", gs)
         val hs = JSONArray()
         for (h in habits(true)) {
             val o = JSONObject()
-            o.put("id", h.id)
             o.put("name", h.name)
             o.put("color", h.color)
             o.put("kind", h.kind)
@@ -153,6 +236,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             o.put("archived", h.archived)
             o.put("position", h.position)
             o.put("created", h.created)
+            o.put("groupId", h.groupId)
+            o.put("startKind", h.startKind)
+            o.put("startValue", h.startValue)
+            o.put("endKind", h.endKind)
+            o.put("endValue", h.endValue)
             o.put("dates", JSONArray(dates(h.id).sorted()))
             val es = JSONArray()
             for ((day, value) in entries(h.id).toSortedMap()) {
@@ -165,16 +253,29 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         return root.toString(2)
     }
 
+    /** Replaces everything with the backup. Files from the first version, without groups, still load. */
     fun importJson(text: String) {
         val root = JSONObject(text)
         if (root.optString("app") != "daab") throw IllegalArgumentException("not a daab backup")
         val hs = root.getJSONArray("habits")
+        val gs = root.optJSONArray("groups") ?: JSONArray()
         val db = writableDatabase
         db.beginTransaction()
         try {
             db.delete("habits", null, null)
             db.delete("habit_dates", null, null)
             db.delete("entries", null, null)
+            db.delete("groups", null, null)
+            val groupIds = HashMap<Long, Long>()
+            for (i in 0 until gs.length()) {
+                val o = gs.getJSONObject(i)
+                val newId = db.insert("groups", null, ContentValues().apply {
+                    put("name", o.getString("name"))
+                    put("color", o.getInt("color"))
+                    put("position", o.optInt("position"))
+                })
+                groupIds[o.getLong("id")] = newId
+            }
             for (i in 0 until hs.length()) {
                 val o = hs.getJSONObject(i)
                 val id = db.insert(
@@ -188,7 +289,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                             reminder = o.getInt("reminder"),
                             archived = o.getBoolean("archived"),
                             position = o.getInt("position"),
-                            created = o.getLong("created")
+                            created = o.getLong("created"),
+                            groupId = groupIds[o.optLong("groupId")] ?: 0,
+                            startKind = o.optInt("startKind"),
+                            startValue = o.optInt("startValue"),
+                            endKind = o.optInt("endKind"),
+                            endValue = o.optInt("endValue")
                         )
                     )
                 )

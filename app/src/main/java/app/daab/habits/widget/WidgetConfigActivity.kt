@@ -38,9 +38,10 @@ class WidgetConfigActivity : ComponentActivity() {
             return
         }
         val habits = Db.get(this).habits()
+        val groups = Db.get(this).groups()
 
-        fun choose(habitId: Long) {
-            HabitWidget.bind(this, widgetId, habitId)
+        fun choose(habitId: Long, groupId: Long = 0) {
+            HabitWidget.bind(this, widgetId, habitId, groupId)
             HabitWidget.render(this, AppWidgetManager.getInstance(this), widgetId)
             setResult(Activity.RESULT_OK, result)
             finish()
@@ -64,6 +65,17 @@ class WidgetConfigActivity : ComponentActivity() {
                             )
                         }
                         HorizontalDivider()
+                        for (g in groups) {
+                            Column(Modifier.fillMaxWidth().clickable { choose(HabitWidget.ALL_HABITS, g.id) }.padding(20.dp)) {
+                                Text("مجموعة " + g.name, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "يعرض عادة الوقت الحالي من المجموعة",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            HorizontalDivider()
+                        }
                         for (h in habits) {
                             Text(
                                 h.name,

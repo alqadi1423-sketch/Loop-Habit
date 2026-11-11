@@ -13,6 +13,15 @@ object Mark {
     const val EXCUSED = 2
 }
 
+/** What a time window edge is tied to. */
+object Anchor {
+    const val NONE = 0
+    const val CLOCK = 1
+    const val PRAYER = 2
+}
+
+val prayerNames = listOf("الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء")
+
 data class Habit(
     val id: Long = 0,
     val name: String = "",
@@ -23,7 +32,19 @@ data class Habit(
     val reminder: Int = -1,
     val archived: Boolean = false,
     val position: Int = 0,
-    val created: Long = 0
+    val created: Long = 0,
+    val groupId: Long = 0,
+    val startKind: Int = Anchor.NONE,
+    val startValue: Int = 0,
+    val endKind: Int = Anchor.NONE,
+    val endValue: Int = 0
+)
+
+data class Group(
+    val id: Long = 0,
+    val name: String = "",
+    val color: Int = Palette.colors[0],
+    val position: Int = 0
 )
 
 object Palette {
