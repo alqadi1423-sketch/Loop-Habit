@@ -28,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,7 +47,7 @@ import kotlin.math.roundToInt
 fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Screen) -> Unit) {
     val habit = remember(id, version) { db.habit(id) }
     if (habit == null) {
-        go(Screen.Home)
+        LaunchedEffect(id) { go(Screen.Home) }
         return
     }
     val dates = remember(id, version) { db.dates(id) }
