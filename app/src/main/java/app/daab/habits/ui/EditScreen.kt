@@ -67,6 +67,7 @@ import app.daab.habits.data.Db
 import app.daab.habits.data.Habit
 import app.daab.habits.data.Kind
 import app.daab.habits.data.Palette
+import app.daab.habits.data.Quran
 import app.daab.habits.data.prayerNames
 import app.daab.habits.logic.Schedule
 import app.daab.habits.notify.ReminderReceiver
@@ -80,10 +81,10 @@ fun timeText(minutes: Int): String {
 }
 
 @Composable
-fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
+fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: () -> Unit) {
     val ctx = LocalContext.current
     val original = remember(id) { if (id == 0L) null else db.habit(id) }
-    var name by remember { mutableStateOf(original?.name ?: "") }
+    var name by remember { mutableStateOf(original?.name ?: if (quranPreset) "ورد القرآن" else "") }
     var color by remember { mutableIntStateOf(original?.color ?: Palette.colors[0]) }
     var kind by remember { mutableIntStateOf(original?.kind ?: Kind.DAILY) }
     var weekdays by remember { mutableIntStateOf(original?.weekdays ?: 127) }
@@ -96,7 +97,10 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
     var startValue by remember { mutableIntStateOf(original?.startValue ?: 0) }
     var endKind by remember { mutableIntStateOf(original?.endKind ?: Anchor.NONE) }
     var endValue by remember { mutableIntStateOf(original?.endValue ?: 0) }
-    var contentRef by remember { mutableIntStateOf(original?.contentRef ?: 0) }
+    var contentRef by remember { mutableIntStateOf(original?.contentRef ?: if (quranPreset) Quran.CONTENT else 0) }
+    var contentUnit by remember { mutableIntStateOf(original?.contentUnit ?: Quran.UNIT_HIZB) }
+    var contentAmount by remember { mutableStateOf((original?.contentAmount ?: 1).toString()) }
+    var amountError by remember { mutableStateOf(false) }
     var contentPart by remember { mutableIntStateOf(original?.contentPart ?: 0) }
     var pickContent by remember { mutableStateOf(false) }
     var pickAnchor by remember { mutableIntStateOf(0) }
@@ -112,15 +116,27 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
             nameError = true
             return
         }
+        val amount = contentAmount.trim().toIntOrNull() ?: 0
+        if (contentRef == Quran.CONTENT && (amount < 1 || amount > 3650)) {
+            amountError = true
+            return
+        }
         val h = (original ?: Habit(created = Schedule.today(), position = db.habits(true).size)).copy(
             name = name.trim(), color = color, kind = kind,
             weekdays = if (weekdays == 0) 127 else weekdays,
             perWeek = perWeek, reminder = reminder,
             groupId = groupId, startKind = startKind, startValue = startValue,
             endKind = endKind, endValue = endValue,
-            contentRef = contentRef, contentPart = contentPart
+            contentRef = contentRef, contentPart = contentPart,
+            contentUnit = contentUnit, contentAmount = amount.coerceAtLeast(1)
         )
         val newId = db.save(h)
+        if (contentRef == Quran.CONTENT && original != null &&
+            (original.contentUnit != contentUnit || original.contentAmount != amount)
+        ) {
+            db.setQuranState(newId, db.quranState(newId).first, 0)
+            db.clearQuranDay(newId, Schedule.today())
+        }
         db.setDates(newId, if (kind == Kind.DATES) dates else emptySet())
         ReminderReceiver.schedule(ctx, h.copy(id = newId))
         saved()
@@ -214,7 +230,36 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
 
             Text("ما يفتحه الضغط على العادة", style = MaterialTheme.typography.labelLarge)
             OutlinedButton(onClick = { pickContent = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (contentRef == 0) "لا شيء، تُعلَّم بضغطة" else Adhkar.title(ctx, contentRef, contentPart))
+                Text(
+                    when (contentRef) {
+                        0 -> "لا شيء، تُعلَّم بضغطة"
+                        Quran.CONTENT -> "ورد القرآن"
+                        else -> Adhkar.title(ctx, contentRef, contentPart)
+                    }
+                )
+            }
+            if (contentRef == Quran.CONTENT) {
+                Text("مقدار الورد", style = MaterialTheme.typography.labelLarge)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (i in Quran.unitNames.indices) {
+                        FilterChip(selected = contentUnit == i, onClick = { contentUnit = i }, label = { Text(Quran.unitNames[i]) })
+                    }
+                }
+                OutlinedTextField(
+                    value = contentAmount,
+                    onValueChange = { v -> contentAmount = v.filter { it.isDigit() }.take(4); amountError = false },
+                    label = { Text(if (contentUnit == Quran.UNIT_DAYS) "عدد أيام الختمة" else "العدد كل يوم") },
+                    isError = amountError,
+                    supportingText = {
+                        Text(
+                            if (amountError) "اكتب رقمًا من 1 فأكثر"
+                            else if (contentUnit == Quran.UNIT_DAYS) "يُقسم الباقي من المصحف على الأيام الباقية، وإن فاتك يوم يُعاد التوزيع."
+                            else "الحزب أربعة أرباع، والجزء حزبان."
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             Text("وقت الظهور في اليوم", style = MaterialTheme.typography.labelLarge)
@@ -290,10 +335,11 @@ fun EditScreen(db: Db, id: Long, saved: () -> Unit, back: () -> Unit) {
         }
         AlertDialog(
             onDismissRequest = { pickContent = false },
-            title = { Text("اختر الأذكار") },
+            title = { Text("اختر ما تفتحه العادة") },
             text = {
                 LazyColumn {
                     item { TextButton(onClick = { set(0, 0) }) { Text("لا شيء، تُعلَّم بضغطة") } }
+                    item { TextButton(onClick = { set(Quran.CONTENT, 0) }) { Text("ورد القرآن") } }
                     item { TextButton(onClick = { set(Adhkar.MORNING_EVENING, Adhkar.PART_MORNING) }) { Text("أذكار الصباح") } }
                     item { TextButton(onClick = { set(Adhkar.MORNING_EVENING, Adhkar.PART_EVENING) }) { Text("أذكار المساء") } }
                     items(categories.filter { it.id != Adhkar.MORNING_EVENING }) { c ->

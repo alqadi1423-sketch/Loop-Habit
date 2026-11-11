@@ -38,9 +38,12 @@ data class Habit(
     val startValue: Int = 0,
     val endKind: Int = Anchor.NONE,
     val endValue: Int = 0,
-    /** Chapter of adhkar opened when the habit is tapped, 0 when the habit has no reading. */
+    /** Chapter of adhkar opened when the habit is tapped, -1 for the Quran, 0 for no reading. */
     val contentRef: Int = 0,
-    val contentPart: Int = 0
+    val contentPart: Int = 0,
+    /** For a Quran habit: how the daily portion is measured and how much of it. */
+    val contentUnit: Int = 0,
+    val contentAmount: Int = 1
 )
 
 data class Group(

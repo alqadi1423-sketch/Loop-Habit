@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import app.daab.habits.data.Db
 import app.daab.habits.data.Kind
 import app.daab.habits.data.Mark
+import app.daab.habits.data.Quran
 import app.daab.habits.logic.Schedule
 import java.time.LocalDate
 import kotlin.math.roundToInt
@@ -86,6 +87,18 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            if (habit.contentRef == Quran.CONTENT) {
+                val position = db.quranState(id).first
+                Text(
+                    "الختمة الحالية ${(position * 100.0 / Quran.TOTAL).roundToInt()}%، والختمات المكتملة ${db.khatmas(id)}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LinearProgressIndicator(
+                    progress = { position.toFloat() / Quran.TOTAL },
+                    color = color,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             if (habit.contentRef != 0) {
                 Button(onClick = { go(Screen.Reader(id)) }, modifier = Modifier.fillMaxWidth()) { Text("افتح القراءة") }
             }

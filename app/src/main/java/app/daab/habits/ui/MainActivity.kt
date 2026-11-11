@@ -66,6 +66,7 @@ import app.daab.habits.data.Group
 import app.daab.habits.data.Habit
 import app.daab.habits.data.Kind
 import app.daab.habits.data.Mark
+import app.daab.habits.data.Quran
 import app.daab.habits.data.prayerNames
 import app.daab.habits.logic.Phase
 import app.daab.habits.logic.PrayerTimes
@@ -77,7 +78,7 @@ import kotlin.math.roundToInt
 sealed interface Screen {
     data object Home : Screen
     data object Settings : Screen
-    data class Edit(val id: Long) : Screen
+    data class Edit(val id: Long, val quran: Boolean = false) : Screen
     data class Detail(val id: Long) : Screen
     data class Reader(val id: Long) : Screen
 }
@@ -165,9 +166,11 @@ fun App(resumes: Int, readerRequest: Long, readerHandled: () -> Unit) {
     when (val s = screen) {
         is Screen.Home -> HomeScreen(db, version + resumes, changed, { screen = it })
         is Screen.Settings -> SettingsScreen({ changed(); screen = Screen.Home })
-        is Screen.Edit -> EditScreen(db, s.id, { changed(); screen = Screen.Home }, { screen = Screen.Home })
+        is Screen.Edit -> EditScreen(db, s.id, s.quran, { changed(); screen = Screen.Home }, { screen = Screen.Home })
         is Screen.Detail -> DetailScreen(db, s.id, version, changed, { screen = it })
-        is Screen.Reader -> ReaderScreen(db, s.id, changed, { screen = Screen.Home })
+        is Screen.Reader ->
+            if (db.habit(s.id)?.contentRef == Quran.CONTENT) QuranScreen(db, s.id, changed, { screen = Screen.Home })
+            else ReaderScreen(db, s.id, changed, { screen = Screen.Home })
     }
 }
 
@@ -213,6 +216,10 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
                 actions = {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "القائمة") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("إضافة ورد القرآن") }, onClick = {
+                            menu = false
+                            go(Screen.Edit(0, quran = true))
+                        })
                         DropdownMenuItem(text = { Text("إضافة مجموعة الصلوات الخمس") }, onClick = {
                             menu = false
                             db.addPrayerGroup(today)
@@ -392,7 +399,9 @@ fun HabitRow(s: HabitState, today: Long, times: IntArray, now: Int, active: Bool
         Column(Modifier.weight(1f)) {
             Text(s.habit.name, style = MaterialTheme.typography.titleMedium)
             Text(
-                if (windowed) windowText(s.habit, times) else describe(s, today),
+                if (windowed) windowText(s.habit, times)
+                else if (s.habit.contentRef == Quran.CONTENT) Quran.describe(s.habit.contentUnit, s.habit.contentAmount)
+                else describe(s, today),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

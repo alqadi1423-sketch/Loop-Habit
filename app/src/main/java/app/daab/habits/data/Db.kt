@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 import org.json.JSONObject
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 3) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 4) {
 
     companion object {
         @Volatile
@@ -33,11 +33,67 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         db.execSQL("CREATE TABLE entries(habit_id INTEGER NOT NULL, day INTEGER NOT NULL, value INTEGER NOT NULL, note TEXT, PRIMARY KEY(habit_id, day))")
         addGroups(db)
         addReading(db)
+        addQuran(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) addGroups(db)
         if (oldVersion < 3) addReading(db)
+        if (oldVersion < 4) addQuran(db)
+    }
+
+    private fun addQuran(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE habits ADD COLUMN content_unit INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE habits ADD COLUMN content_amount INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("CREATE TABLE quran_state(habit_id INTEGER PRIMARY KEY, position INTEGER NOT NULL, plan_end INTEGER NOT NULL, khatmas INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE quran_day(habit_id INTEGER NOT NULL, day INTEGER NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL, reached INTEGER NOT NULL, PRIMARY KEY(habit_id, day))")
+    }
+
+    /** Where the reader stands in the Quran and the last day of a timed khatma plan. */
+    fun quranState(habitId: Long): Pair<Int, Long> {
+        readableDatabase.rawQuery("SELECT position, plan_end FROM quran_state WHERE habit_id=?", arrayOf(habitId.toString())).use { c ->
+            if (c.moveToNext()) return c.getInt(0) to c.getLong(1)
+        }
+        return 0 to 0L
+    }
+
+    fun khatmas(habitId: Long): Int {
+        readableDatabase.rawQuery("SELECT khatmas FROM quran_state WHERE habit_id=?", arrayOf(habitId.toString())).use { c ->
+            if (c.moveToNext()) return c.getInt(0)
+        }
+        return 0
+    }
+
+    fun setQuranState(habitId: Long, position: Int, planEnd: Long, addKhatma: Boolean = false) {
+        val done = khatmas(habitId) + if (addKhatma) 1 else 0
+        writableDatabase.insertWithOnConflict("quran_state", null, ContentValues().apply {
+            put("habit_id", habitId)
+            put("position", position)
+            put("plan_end", planEnd)
+            put("khatmas", done)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun quranDay(habitId: Long, day: Long): QuranRange? {
+        readableDatabase.rawQuery(
+            "SELECT start, end, reached FROM quran_day WHERE habit_id=? AND day=?", arrayOf(habitId.toString(), day.toString())
+        ).use { c -> if (c.moveToNext()) return QuranRange(c.getInt(0), c.getInt(1), c.getInt(2)) }
+        return null
+    }
+
+    fun setQuranDay(habitId: Long, day: Long, start: Int, end: Int, reached: Int) {
+        writableDatabase.insertWithOnConflict("quran_day", null, ContentValues().apply {
+            put("habit_id", habitId)
+            put("day", day)
+            put("start", start)
+            put("end", end)
+            put("reached", reached)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    /** Forgets today's portion so it is worked out again, used after the habit's amount changes. */
+    fun clearQuranDay(habitId: Long, day: Long) {
+        writableDatabase.delete("quran_day", "habit_id=? AND day=? AND reached=start", arrayOf(habitId.toString(), day.toString()))
     }
 
     private fun addReading(db: SQLiteDatabase) {
@@ -76,7 +132,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                         endKind = int("end_kind"),
                         endValue = int("end_value"),
                         contentRef = int("content_ref"),
-                        contentPart = int("content_part")
+                        contentPart = int("content_part"),
+                        contentUnit = int("content_unit"),
+                        contentAmount = int("content_amount")
                     )
                 )
             }
@@ -103,6 +161,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         put("end_value", h.endValue)
         put("content_ref", h.contentRef)
         put("content_part", h.contentPart)
+        put("content_unit", h.contentUnit)
+        put("content_amount", h.contentAmount)
     }
 
     fun save(h: Habit): Long {
@@ -123,6 +183,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         db.delete("entries", "habit_id=?", a)
         db.delete("progress", "habit_id=?", a)
         db.delete("partials", "habit_id=?", a)
+        db.delete("quran_state", "habit_id=?", a)
+        db.delete("quran_day", "habit_id=?", a)
     }
 
     /** How many times each dhikr was counted on that day. */
@@ -272,7 +334,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
     fun exportJson(): String {
         val root = JSONObject()
         root.put("app", "daab")
-        root.put("version", 3)
+        root.put("version", 4)
         val gs = JSONArray()
         for (g in groups()) {
             gs.put(JSONObject().put("id", g.id).put("name", g.name).put("color", g.color).put("position", g.position))
@@ -297,6 +359,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             o.put("endValue", h.endValue)
             o.put("contentRef", h.contentRef)
             o.put("contentPart", h.contentPart)
+            o.put("contentUnit", h.contentUnit)
+            o.put("contentAmount", h.contentAmount)
+            if (h.contentRef == Quran.CONTENT) {
+                o.put("quranPosition", quranState(h.id).first)
+                o.put("quranKhatmas", khatmas(h.id))
+            }
             val ps = JSONArray()
             for ((day, permille) in partials(h.id).toSortedMap()) {
                 ps.put(JSONArray().put(day).put(permille))
@@ -329,6 +397,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             db.delete("groups", null, null)
             db.delete("progress", null, null)
             db.delete("partials", null, null)
+            db.delete("quran_state", null, null)
+            db.delete("quran_day", null, null)
             val groupIds = HashMap<Long, Long>()
             for (i in 0 until gs.length()) {
                 val o = gs.getJSONObject(i)
@@ -359,10 +429,20 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                             endKind = o.optInt("endKind"),
                             endValue = o.optInt("endValue"),
                             contentRef = o.optInt("contentRef"),
-                            contentPart = o.optInt("contentPart")
+                            contentPart = o.optInt("contentPart"),
+                            contentUnit = o.optInt("contentUnit"),
+                            contentAmount = o.optInt("contentAmount", 1)
                         )
                     )
                 )
+                if (o.has("quranPosition")) {
+                    db.insert("quran_state", null, ContentValues().apply {
+                        put("habit_id", id)
+                        put("position", o.getInt("quranPosition"))
+                        put("plan_end", 0)
+                        put("khatmas", o.optInt("quranKhatmas"))
+                    })
+                }
                 val ds = o.getJSONArray("dates")
                 for (j in 0 until ds.length()) {
                     db.insert("habit_dates", null, ContentValues().apply {
