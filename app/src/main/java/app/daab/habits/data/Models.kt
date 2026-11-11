@@ -49,8 +49,13 @@ data class Habit(
     /** Notify this many minutes before the window closes, 0 for no notice. */
     val remindEnd: Int = 0,
     /** Daily count to reach for a counted habit such as cups of water, 0 for a plain check. */
-    val target: Int = 0
+    val target: Int = 0,
+    /** Running counter this habit feeds, and how much each completion adds to or takes from it. */
+    val counterId: Long = 0,
+    val counterEffect: Int = 0
 )
+
+data class Counter(val id: Long = 0, val name: String = "", val position: Int = 0)
 
 data class Group(
     val id: Long = 0,

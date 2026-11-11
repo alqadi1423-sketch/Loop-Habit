@@ -108,6 +108,9 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
     var remindEnd by remember { mutableStateOf((original?.remindEnd ?: 0) > 0) }
     var target by remember { mutableStateOf((original?.target ?: 0).let { if (it > 0) it.toString() else "" }) }
     var custom by remember { mutableStateOf(if (id == 0L) emptyList() else db.customItems(id)) }
+    val counters = remember { db.counters() }
+    var counterId by remember { mutableStateOf(original?.counterId ?: 0L) }
+    var counterEffect by remember { mutableStateOf((original?.counterEffect ?: 1).toString()) }
     var addCustom by remember { mutableStateOf(false) }
     var customError by remember { mutableStateOf(false) }
     var contentPart by remember { mutableIntStateOf(original?.contentPart ?: 0) }
@@ -144,7 +147,9 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
             contentUnit = contentUnit, contentAmount = amount.coerceAtLeast(1),
             remindStart = remindStart && startKind != Anchor.NONE,
             remindEnd = if (remindEnd && (startKind != Anchor.NONE || endKind != Anchor.NONE)) 15 else 0,
-            target = if (contentRef == 0) (target.toIntOrNull() ?: 0).coerceIn(0, 9999) else 0
+            target = if (contentRef == 0) (target.toIntOrNull() ?: 0).coerceIn(0, 9999) else 0,
+            counterId = counterId,
+            counterEffect = if (counterId == 0L) 0 else (counterEffect.toIntOrNull() ?: 0).coerceIn(-9999, 9999)
         )
         val newId = db.save(h)
         db.setCustomItems(newId, if (contentRef == Adhkar.CUSTOM) custom else emptyList())
@@ -316,6 +321,29 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+
+            if (counters.isNotEmpty()) {
+                Text("العدّاد", style = MaterialTheme.typography.labelLarge)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = counterId == 0L, onClick = { counterId = 0L }, label = { Text("بلا عدّاد") })
+                    for (c in counters) {
+                        FilterChip(selected = counterId == c.id, onClick = { counterId = c.id }, label = { Text(c.name) })
+                    }
+                }
+                if (counterId != 0L) {
+                    OutlinedTextField(
+                        value = counterEffect,
+                        onValueChange = { v ->
+                            val sign = if (v.trim().startsWith("-")) "-" else ""
+                            counterEffect = sign + v.filter { it.isDigit() }.take(4)
+                        },
+                        label = { Text("أثرها على العدّاد في كل إنجاز") },
+                        supportingText = { Text("مثل 3 لتضيف ثلاثة، أو 0 لتُسجل بلا أثر، أو ‎-1 لتنقص واحدًا.") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             Text("وقت الظهور في اليوم", style = MaterialTheme.typography.labelLarge)

@@ -6,6 +6,13 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.net.Uri
 import android.widget.RemoteViews
 import app.daab.habits.R
@@ -36,10 +43,15 @@ class HabitWidget : AppWidgetProvider() {
         private const val ACTION_REFRESH = "app.daab.habits.widget.REFRESH"
         private const val EXTRA_HABIT = "habit"
         private const val PREFS = "widgets"
-        private const val NEUTRAL = 0xFF2C2C2A.toInt()
-        private const val LIGHT = 0xFFF1EFE8.toInt()
+        private const val DARK = 0xFF1B2A2E.toInt()
+        private const val TRACK = 0xFF33454A.toInt()
+        private const val SOFT = 0xFFB9C6C4.toInt()
         private const val WHITE = 0xFFFFFFFF.toInt()
-        private const val DONE_ALL = 0xFF0F6E56.toInt()
+        private const val WHITE_FAINT = 0x4DFFFFFF
+        private const val GRAY = 0xFF3A4649.toInt()
+        private const val GRAY_RING = 0xFF8FA09F.toInt()
+        private const val GRAY_TRACK = 0xFF4B5A5D.toInt()
+        private const val ALL_DONE = 0xFF0F5C55.toInt()
 
         fun bind(ctx: Context, widgetId: Int, habitId: Long, groupId: Long) {
             ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -63,7 +75,8 @@ class HabitWidget : AppWidgetProvider() {
                 if (h.startKind == Anchor.CLOCK) marks.add(h.startValue)
                 if (h.endKind == Anchor.CLOCK) marks.add(h.endValue)
             }
-            val next = marks.filter { it > now }.minOrNull() ?: 1440
+            marks.add(Schedule.dayEnd())
+            val next = marks.filter { it > now }.minOrNull() ?: (now + 30)
             val at = LocalDate.ofEpochDay(today).atStartOfDay(ZoneId.systemDefault())
                 .plusMinutes(next.toLong()).plusSeconds(20).toInstant().toEpochMilli()
             val pending = PendingIntent.getBroadcast(
@@ -100,6 +113,63 @@ class HabitWidget : AppWidgetProvider() {
 
         private class Slot(val habit: Habit, val value: Int, val phase: Int, val start: Int)
 
+        private const val GLYPH_NONE = 0
+        private const val GLYPH_CHECK = 1
+        private const val GLYPH_CROSS = 2
+
+        /** Draws the ring of a square: a track, an arc for the habit's strength, and what is inside it. */
+        private fun ringBitmap(arc: Float, ringColor: Int, trackColor: Int, glyph: Int, text: String, inkColor: Int): Bitmap {
+            val size = 168
+            val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            val stroke = 11f
+            val box = RectF(stroke, stroke, size - stroke, size - stroke)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = stroke
+                strokeCap = Paint.Cap.ROUND
+            }
+            paint.color = trackColor
+            canvas.drawArc(box, 0f, 360f, false, paint)
+            if (arc > 0.01f) {
+                paint.color = ringColor
+                canvas.drawArc(box, -90f, 360f * arc.coerceIn(0f, 1f), false, paint)
+            }
+            paint.color = inkColor
+            paint.strokeWidth = 13f
+            val c = size / 2f
+            when (glyph) {
+                GLYPH_CHECK -> {
+                    val path = Path()
+                    path.moveTo(c - 30f, c + 2f)
+                    path.lineTo(c - 9f, c + 23f)
+                    path.lineTo(c + 32f, c - 21f)
+                    paint.strokeJoin = Paint.Join.ROUND
+                    canvas.drawPath(path, paint)
+                }
+                GLYPH_CROSS -> {
+                    canvas.drawLine(c - 22f, c - 22f, c + 22f, c + 22f, paint)
+                    canvas.drawLine(c + 22f, c - 22f, c - 22f, c + 22f, paint)
+                }
+                else -> if (text.isNotEmpty()) {
+                    val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = inkColor
+                        textAlign = Paint.Align.CENTER
+                        typeface = Typeface.DEFAULT_BOLD
+                        textSize = if (text.length > 4) 36f else 44f
+                    }
+                    canvas.drawText(text, c, c - (tp.descent() + tp.ascent()) / 2, tp)
+                }
+            }
+            return bmp
+        }
+
+        /** A habit color lightened so it stands out on the dark square. */
+        private fun bright(color: Int): Int {
+            fun mix(v: Int) = v + ((255 - v) * 0.35f).toInt()
+            return Color.rgb(mix(Color.red(color)), mix(Color.green(color)), mix(Color.blue(color)))
+        }
+
         fun render(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
             val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val boundHabit = prefs.getLong("w_$widgetId", ALL_HABITS)
@@ -110,32 +180,41 @@ class HabitWidget : AppWidgetProvider() {
             val times = PrayerTimes.forDay(ctx, today)
             val views = RemoteViews(ctx.packageName, R.layout.habit_widget)
 
-            fun show(bg: Int, fg: Int, mark: String, name: String, click: PendingIntent) {
+            fun show(bg: Int, ring: Bitmap, nameColor: Int, name: String, click: PendingIntent) {
                 views.setInt(R.id.widget_bg, "setColorFilter", bg)
-                views.setTextColor(R.id.widget_mark, fg)
-                views.setTextColor(R.id.widget_name, fg)
-                views.setTextViewText(R.id.widget_mark, mark)
+                views.setImageViewBitmap(R.id.widget_ring, ring)
+                views.setTextColor(R.id.widget_name, nameColor)
                 views.setTextViewText(R.id.widget_name, name)
                 views.setOnClickPendingIntent(R.id.widget_root, click)
             }
 
+            fun strength(h: Habit): Float =
+                Schedule.score(h, db.dates(h.id), db.entries(h.id), today, db.partials(h.id)).toFloat()
+
+            fun plain(name: String, text: String) =
+                show(DARK, ringBitmap(0f, TRACK, TRACK, GLYPH_NONE, text, SOFT), SOFT, name, openApp(ctx, widgetId))
+
+            // Before a habit is done its square stays dark and only the ring carries its color.
             fun pending(h: Habit) {
-                if (h.target > 0) {
-                    val count = db.progress(h.id, today)[0] ?: 0
-                    show(NEUTRAL, h.color, "$count/${h.target}", h.name, tap(ctx, widgetId, h.id))
-                } else if (h.contentRef != 0) {
-                    val percent = (db.partials(h.id)[today] ?: 0) / 10
-                    show(NEUTRAL, h.color, if (percent > 0) "$percent%" else "○", h.name, read(ctx, widgetId, h.id))
-                } else {
-                    show(NEUTRAL, h.color, "○", h.name, tap(ctx, widgetId, h.id))
+                val c = bright(h.color)
+                when {
+                    h.target > 0 -> {
+                        val count = db.progress(h.id, today)[0] ?: 0
+                        show(DARK, ringBitmap(count.toFloat() / h.target, c, TRACK, GLYPH_NONE, "$count/${h.target}", WHITE), WHITE, h.name, tap(ctx, widgetId, h.id))
+                    }
+                    h.contentRef != 0 -> {
+                        val permille = db.partials(h.id)[today] ?: 0
+                        val text = if (permille > 0) "${permille / 10}%" else ""
+                        show(DARK, ringBitmap(if (permille > 0) permille / 1000f else strength(h), c, TRACK, GLYPH_NONE, text, WHITE), WHITE, h.name, read(ctx, widgetId, h.id))
+                    }
+                    else -> show(DARK, ringBitmap(strength(h), c, TRACK, GLYPH_NONE, "", WHITE), WHITE, h.name, tap(ctx, widgetId, h.id))
                 }
             }
 
-            // A finished habit can be unmarked by a second tap only on a square bound to that
-            // one habit. Counted habits and squares that rotate through habits open the app
-            // instead, so a quick extra tap never wipes what was just recorded.
+            // A finished habit fills the square with its color. A second tap unmarks it only on
+            // a square bound to that one habit, so a quick extra tap never wipes a record.
             fun done(h: Habit, single: Boolean) = show(
-                h.color, WHITE, "✓", h.name,
+                h.color, ringBitmap(strength(h), WHITE, WHITE_FAINT, GLYPH_CHECK, "", WHITE), WHITE, h.name,
                 when {
                     h.contentRef != 0 -> read(ctx, widgetId, h.id)
                     single && h.target == 0 -> tap(ctx, widgetId, h.id)
@@ -143,10 +222,19 @@ class HabitWidget : AppWidgetProvider() {
                 }
             )
 
+            fun later(h: Habit, start: Int) = show(
+                DARK, ringBitmap(0f, TRACK, TRACK, GLYPH_NONE, timeText(start).substringBefore(' '), SOFT), SOFT, h.name,
+                openApp(ctx, widgetId)
+            )
+
+            fun missed(h: Habit) = show(
+                GRAY, ringBitmap(strength(h), GRAY_RING, GRAY_TRACK, GLYPH_CROSS, "", SOFT), SOFT, h.name, openApp(ctx, widgetId)
+            )
+
             if (boundGroup == 0L && boundHabit != ALL_HABITS) {
                 val h = db.habit(boundHabit)
                 if (h == null || h.archived) {
-                    show(NEUTRAL, LIGHT, "؟", "العادة محذوفة", openApp(ctx, widgetId))
+                    plain("العادة محذوفة", "؟")
                 } else {
                     val entries = db.entries(h.id)
                     val v = entries[today] ?: Mark.NONE
@@ -154,11 +242,10 @@ class HabitWidget : AppWidgetProvider() {
                     val phase = Schedule.phase(h, times, now)
                     when {
                         v == Mark.DONE -> done(h, true)
-                        v == Mark.EXCUSED -> show(NEUTRAL, LIGHT, "ع", h.name, openApp(ctx, widgetId))
-                        !due -> show(NEUTRAL, LIGHT, "·", h.name + "\nليست اليوم", openApp(ctx, widgetId))
-                        phase == Phase.BEFORE ->
-                            show(NEUTRAL, LIGHT, "·", h.name + "\n" + timeText(Schedule.window(h, times).first), openApp(ctx, widgetId))
-                        phase == Phase.CLOSED -> show(NEUTRAL, LIGHT, "×", h.name + "\nفائتة", openApp(ctx, widgetId))
+                        v == Mark.EXCUSED -> plain(h.name, "عذر")
+                        !due -> plain(h.name, "")
+                        phase == Phase.BEFORE -> later(h, Schedule.window(h, times).first)
+                        phase == Phase.CLOSED -> missed(h)
                         else -> pending(h)
                     }
                 }
@@ -180,18 +267,20 @@ class HabitWidget : AppWidgetProvider() {
                 .minWithOrNull(compareBy({ !Schedule.hasWindow(it.habit) }, { Schedule.window(it.habit, times).second }))
             val groupGone = boundGroup != 0L && db.groups().none { it.id == boundGroup }
             val later = slots.filter { it.phase == Phase.BEFORE && it.value == Mark.NONE }.minByOrNull { it.start }
-            val missed = slots.any { it.phase == Phase.CLOSED && it.value == Mark.NONE }
+            val lost = slots.filter { it.phase == Phase.CLOSED && it.value == Mark.NONE }.maxByOrNull { it.start }
             val current = if (boundGroup != 0L) {
                 slots.filter { it.phase == Phase.OPEN && it.value == Mark.DONE && Schedule.hasWindow(it.habit) }.maxByOrNull { it.start }
             } else null
             when {
-                groupGone -> show(NEUTRAL, LIGHT, "؟", "المجموعة محذوفة", openApp(ctx, widgetId))
-                pool.isEmpty() -> show(NEUTRAL, LIGHT, "+", "أضف عادة", openApp(ctx, widgetId))
+                groupGone -> plain("المجموعة محذوفة", "؟")
+                pool.isEmpty() -> plain("أضف عادة", "+")
                 open != null -> pending(open.habit)
                 current != null -> done(current.habit, false)
-                later != null -> show(NEUTRAL, LIGHT, "·", later.habit.name + "\n" + timeText(later.start), openApp(ctx, widgetId))
-                missed -> show(NEUTRAL, LIGHT, "·", "انتهى وقت عادات اليوم", openApp(ctx, widgetId))
-                else -> show(DONE_ALL, WHITE, "✓", "أنجزت عادات اليوم", openApp(ctx, widgetId))
+                later != null -> later(later.habit, later.start)
+                lost != null -> missed(lost.habit)
+                else -> show(
+                    ALL_DONE, ringBitmap(1f, WHITE, WHITE_FAINT, GLYPH_CHECK, "", WHITE), WHITE, "أنجزت اليوم", openApp(ctx, widgetId)
+                )
             }
             mgr.updateAppWidget(widgetId, views)
         }

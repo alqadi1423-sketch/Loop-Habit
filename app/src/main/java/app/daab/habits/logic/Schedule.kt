@@ -6,7 +6,7 @@ import app.daab.habits.data.Kind
 import app.daab.habits.data.Mark
 import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.LocalTime
+import java.time.LocalDateTime
 import java.time.temporal.TemporalAdjusters
 import kotlin.math.min
 import kotlin.math.pow
@@ -19,9 +19,21 @@ object Phase {
 
 object Schedule {
 
-    fun today(): Long = LocalDate.now().toEpochDay()
+    /**
+     * The day habits are logged against. With the extended day on, the hours right after
+     * midnight still count as the day before.
+     */
+    fun today(): Long = LocalDateTime.now().minusMinutes(Settings.shiftMinutes().toLong()).toLocalDate().toEpochDay()
 
-    fun nowMinutes(): Int = LocalTime.now().toSecondOfDay() / 60
+    /** Minutes since the logical day began. Past midnight on an extended day this goes above 1440. */
+    fun nowMinutes(): Int {
+        val now = LocalDateTime.now()
+        val dayStart = LocalDate.ofEpochDay(today()).atStartOfDay()
+        return java.time.Duration.between(dayStart, now).toMinutes().toInt()
+    }
+
+    /** The minute the logical day ends. */
+    fun dayEnd(): Int = 1440 + Settings.shiftMinutes()
 
     fun hasWindow(h: Habit): Boolean = h.startKind != Anchor.NONE || h.endKind != Anchor.NONE
 
@@ -34,8 +46,8 @@ object Schedule {
     /** Start and end of the habit's time window today, in minutes after midnight. */
     fun window(h: Habit, times: IntArray): Pair<Int, Int> {
         val start = resolve(h.startKind, h.startValue, times, 0)
-        var end = resolve(h.endKind, h.endValue, times, 1440)
-        if (end <= start) end = 1440
+        var end = resolve(h.endKind, h.endValue, times, dayEnd())
+        if (end <= start) end = dayEnd()
         return start to end
     }
 
@@ -52,7 +64,13 @@ object Schedule {
     fun weekdayIndex(day: Long): Int = LocalDate.ofEpochDay(day).dayOfWeek.value % 7
 
     fun weekStart(day: Long): Long =
-        LocalDate.ofEpochDay(day).with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY)).toEpochDay()
+        LocalDate.ofEpochDay(day).with(TemporalAdjusters.previousOrSame(firstWeekday())).toEpochDay()
+
+    private fun firstWeekday(): DayOfWeek = when (Settings.weekStart) {
+        0 -> DayOfWeek.SUNDAY
+        1 -> DayOfWeek.MONDAY
+        else -> DayOfWeek.SATURDAY
+    }
 
     /** Whether the habit is planned for this calendar day, regardless of what was logged. */
     fun isScheduled(h: Habit, dates: Set<Long>, day: Long): Boolean = when (h.kind) {

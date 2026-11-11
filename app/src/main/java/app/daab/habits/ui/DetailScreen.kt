@@ -104,13 +104,18 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
             }
 
             Text(
+                "عدد مرات الإنجاز ${entries.values.count { it == Mark.DONE }}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
                 "السجل، آخر ستة أسابيع",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp)
             )
             Row(Modifier.fillMaxWidth()) {
-                for (n in weekdayNames) {
+                for (n in weekOrder()) {
                     Text(
                         n, Modifier.weight(1f), textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.labelSmall,

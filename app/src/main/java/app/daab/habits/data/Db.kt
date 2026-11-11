@@ -6,8 +6,9 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 import org.json.JSONObject
+import app.daab.habits.logic.Settings
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 5) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 6) {
 
     companion object {
         @Volatile
@@ -15,7 +16,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
 
         fun get(ctx: Context): Db =
             instance ?: synchronized(this) {
-                instance ?: Db(ctx.applicationContext).also { instance = it }
+                instance ?: Db(ctx.applicationContext).also {
+                    Settings.load(ctx)
+                    instance = it
+                }
             }
 
         private val windowColumns = listOf("group_id", "start_kind", "start_value", "end_kind", "end_value")
@@ -39,6 +43,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         addReading(db)
         addQuran(db)
         addExtras(db)
+        addCounters(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -46,6 +51,47 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         if (oldVersion < 3) addReading(db)
         if (oldVersion < 4) addQuran(db)
         if (oldVersion < 5) addExtras(db)
+        if (oldVersion < 6) addCounters(db)
+    }
+
+    private fun addCounters(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE habits ADD COLUMN counter_id INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE habits ADD COLUMN counter_effect INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE counters(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, position INTEGER NOT NULL)")
+    }
+
+    fun counters(): List<Counter> {
+        val out = ArrayList<Counter>()
+        readableDatabase.rawQuery("SELECT id, name, position FROM counters ORDER BY position, id", null).use { c ->
+            while (c.moveToNext()) out.add(Counter(c.getLong(0), c.getString(1), c.getInt(2)))
+        }
+        return out
+    }
+
+    fun saveCounter(counter: Counter): Long {
+        val v = ContentValues().apply {
+            put("name", counter.name)
+            put("position", counter.position)
+        }
+        return if (counter.id == 0L) writableDatabase.insert("counters", null, v)
+        else {
+            writableDatabase.update("counters", v, "id=?", arrayOf(counter.id.toString()))
+            counter.id
+        }
+    }
+
+    /** Removes the counter. Its habits and their records stay, they just stop feeding it. */
+    fun deleteCounter(id: Long) {
+        writableDatabase.execSQL("UPDATE habits SET counter_id=0, counter_effect=0 WHERE counter_id=?", arrayOf(id.toString()))
+        writableDatabase.delete("counters", "id=?", arrayOf(id.toString()))
+    }
+
+    /** How many days the habit has been marked done, over its whole record. */
+    fun doneCount(habitId: Long): Int {
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM entries WHERE habit_id=? AND value=" + Mark.DONE, arrayOf(habitId.toString())
+        ).use { c -> if (c.moveToNext()) return c.getInt(0) }
+        return 0
     }
 
     private fun addExtras(db: SQLiteDatabase) {
@@ -222,7 +268,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                         contentAmount = int("content_amount"),
                         remindStart = int("remind_start") != 0,
                         remindEnd = int("remind_end"),
-                        target = int("target")
+                        target = int("target"),
+                        counterId = c.getLong(c.getColumnIndexOrThrow("counter_id")),
+                        counterEffect = int("counter_effect")
                     )
                 )
             }
@@ -254,6 +302,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         put("remind_start", if (h.remindStart) 1 else 0)
         put("remind_end", h.remindEnd)
         put("target", h.target)
+        put("counter_id", h.counterId)
+        put("counter_effect", h.counterEffect)
     }
 
     fun save(h: Habit): Long {
@@ -449,12 +499,15 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         val root = JSONObject()
         root.put("app", "daab")
         if (settings != null) root.put("settings", settings)
-        root.put("version", 5)
+        root.put("version", 6)
         val gs = JSONArray()
         for (g in groups()) {
             gs.put(JSONObject().put("id", g.id).put("name", g.name).put("color", g.color).put("position", g.position))
         }
         root.put("groups", gs)
+        val cts = JSONArray()
+        for (c in counters()) cts.put(JSONObject().put("id", c.id).put("name", c.name).put("position", c.position))
+        root.put("counters", cts)
         val hs = JSONArray()
         for (h in habits(true)) {
             val o = JSONObject()
@@ -480,6 +533,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             o.put("remindStart", h.remindStart)
             o.put("remindEnd", h.remindEnd)
             o.put("target", h.target)
+            o.put("counterId", h.counterId)
+            o.put("counterEffect", h.counterEffect)
             val cs = JSONArray()
             for (it in customItems(h.id)) cs.put(JSONObject().put("text", it.text).put("count", it.count))
             o.put("custom", cs)
@@ -534,6 +589,16 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             db.delete("quran_state", null, null)
             db.delete("quran_day", null, null)
             db.delete("custom_items", null, null)
+            db.delete("counters", null, null)
+            val cts = root.optJSONArray("counters") ?: JSONArray()
+            for (i in 0 until cts.length()) {
+                val o = cts.getJSONObject(i)
+                db.insert("counters", null, ContentValues().apply {
+                    put("id", o.getLong("id"))
+                    put("name", o.getString("name"))
+                    put("position", o.optInt("position"))
+                })
+            }
             val groupIds = HashMap<Long, Long>()
             for (i in 0 until gs.length()) {
                 val o = gs.getJSONObject(i)
@@ -570,7 +635,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                             contentAmount = o.optInt("contentAmount", 1),
                             remindStart = o.optBoolean("remindStart"),
                             remindEnd = o.optInt("remindEnd"),
-                            target = o.optInt("target")
+                            target = o.optInt("target"),
+                            counterId = o.optLong("counterId"),
+                            counterEffect = o.optInt("counterEffect")
                         )
                     ).apply { if (o.optLong("id") > 0) put("id", o.getLong("id")) }
                 )
