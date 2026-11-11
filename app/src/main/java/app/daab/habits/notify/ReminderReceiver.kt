@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import app.daab.habits.R
 import app.daab.habits.data.Anchor
 import app.daab.habits.data.Db
@@ -97,7 +98,8 @@ class ReminderReceiver : BroadcastReceiver() {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val id = intent.getLongExtra(EXTRA_HABIT, 0)
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED -> {
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED -> {
                 scheduleAll(ctx)
                 HabitWidget.updateAll(ctx)
             }
@@ -131,7 +133,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
     private fun notify(ctx: Context, nm: NotificationManager, h: Habit, text: String) {
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "تذكير العادات", NotificationManager.IMPORTANCE_DEFAULT))
-        val openIntent = Intent(ctx, MainActivity::class.java)
+        val openIntent = Intent(ctx, MainActivity::class.java).setData(Uri.parse("daab://open/habit/${h.id}"))
         if (h.contentRef != 0) openIntent.putExtra(MainActivity.EXTRA_READER, h.id)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val open = PendingIntent.getActivity(ctx, h.id.toInt(), openIntent, flags)

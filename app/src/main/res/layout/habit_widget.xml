@@ -3,7 +3,7 @@
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="4dp">
+    android:padding="2dp">
 
     <ImageView
         android:id="@+id/widget_bg"
@@ -18,13 +18,13 @@
         android:layout_height="match_parent"
         android:gravity="center"
         android:orientation="vertical"
-        android:padding="6dp">
+        android:padding="3dp">
 
         <TextView
             android:id="@+id/widget_mark"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="24sp"
+            android:textSize="20sp"
             android:textStyle="bold" />
 
         <TextView
@@ -34,6 +34,6 @@
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="2"
-            android:textSize="13sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 </FrameLayout>

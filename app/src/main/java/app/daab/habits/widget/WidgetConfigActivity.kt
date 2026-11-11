@@ -42,7 +42,7 @@ class WidgetConfigActivity : ComponentActivity() {
 
         fun choose(habitId: Long, groupId: Long = 0) {
             HabitWidget.bind(this, widgetId, habitId, groupId)
-            HabitWidget.render(this, AppWidgetManager.getInstance(this), widgetId)
+            HabitWidget.updateAll(this)
             setResult(Activity.RESULT_OK, result)
             finish()
         }

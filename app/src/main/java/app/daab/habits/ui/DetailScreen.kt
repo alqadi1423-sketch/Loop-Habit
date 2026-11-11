@@ -143,7 +143,7 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
                                     Mark.DONE -> Mark.EXCUSED
                                     else -> Mark.NONE
                                 }
-                                db.setEntry(id, day, next)
+                                db.setMark(id, day, next)
                                 changed()
                             },
                             contentAlignment = Alignment.Center

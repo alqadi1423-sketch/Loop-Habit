@@ -24,7 +24,8 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then echo "$KEYSTORE_B64" | base64 -d > signing.keystore; fi
+          if [ -z "$KEYSTORE_B64" ]; then echo "The signing key secret is missing, refusing to build an app that cannot update the installed one." && exit 1; fi
+          echo "$KEYSTORE_B64" | base64 -d > signing.keystore
       - name: Build
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

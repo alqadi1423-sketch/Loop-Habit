@@ -31,7 +31,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.daab.habits.data.prayerNames
+import app.daab.habits.logic.City
 import app.daab.habits.logic.PrayerTimes
+import app.daab.habits.notify.ReminderReceiver
+import app.daab.habits.widget.HabitWidget
 import app.daab.habits.logic.Schedule
 
 @Composable
@@ -39,6 +42,12 @@ fun SettingsScreen(back: () -> Unit) {
     val ctx = LocalContext.current
     var city by remember { mutableStateOf(PrayerTimes.city(ctx).name) }
     val times = remember(city) { PrayerTimes.forDay(ctx, Schedule.today()) }
+    val choose = { c: City ->
+        PrayerTimes.setCity(ctx, c)
+        city = c.name
+        ReminderReceiver.scheduleAll(ctx)
+        HabitWidget.updateAll(ctx)
+    }
 
     Scaffold(
         topBar = {
@@ -71,16 +80,10 @@ fun SettingsScreen(back: () -> Unit) {
             )
             for (c in PrayerTimes.cities) {
                 Row(
-                    Modifier.fillMaxWidth().clickable {
-                        PrayerTimes.setCity(ctx, c)
-                        city = c.name
-                    }.padding(horizontal = 8.dp),
+                    Modifier.fillMaxWidth().clickable { choose(c) }.padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RadioButton(selected = city == c.name, onClick = {
-                        PrayerTimes.setCity(ctx, c)
-                        city = c.name
-                    })
+                    RadioButton(selected = city == c.name, onClick = { choose(c) })
                     Text(c.name)
                 }
             }

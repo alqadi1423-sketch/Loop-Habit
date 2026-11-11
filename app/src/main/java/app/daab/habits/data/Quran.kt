@@ -98,6 +98,16 @@ object Quran {
         db.quranDay(h.id, day)?.let { return it }
         val q = text(ctx)
         var (position, planEnd) = db.quranState(h.id)
+        // Carry on from where the last portion was left, whether it was finished from the
+        // reader, marked done from the record, or only partly read.
+        db.lastQuranDay(h.id, day)?.let { last ->
+            val finished = db.entries(h.id)[last[0]] == Mark.DONE
+            val stopped = (if (finished) last[2] else last[3]).toInt()
+            if (position >= last[1] && position < stopped) {
+                position = stopped
+                db.setQuranState(h.id, position, planEnd, addKhatma = stopped >= TOTAL)
+            }
+        }
         if (position >= TOTAL) position = 0
         if (h.contentUnit == UNIT_DAYS && planEnd < day) {
             planEnd = day + h.contentAmount.coerceAtLeast(1) - 1

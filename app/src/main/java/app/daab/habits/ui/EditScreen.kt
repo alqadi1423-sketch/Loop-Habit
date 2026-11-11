@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -79,7 +80,7 @@ fun timeText(minutes: Int): String {
     val h = minutes / 60
     val m = minutes % 60
     val h12 = if (h % 12 == 0) 12 else h % 12
-    return "%d:%02d %s".format(h12, m, if (h < 12) "ص" else "م")
+    return String.format(java.util.Locale.US, "%d:%02d %s", h12, m, if (h < 12) "ص" else "م")
 }
 
 @Composable
@@ -170,7 +171,7 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
         }
     ) { pad ->
         Column(
-            Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            Modifier.padding(pad).fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             OutlinedTextField(

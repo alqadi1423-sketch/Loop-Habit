@@ -21,6 +21,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         private val windowColumns = listOf("group_id", "start_kind", "start_value", "end_kind", "end_value")
     }
 
+    override fun onConfigure(db: SQLiteDatabase) {
+        setWriteAheadLoggingEnabled(true)
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE habits(" +
@@ -77,6 +81,31 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         } finally {
             db.endTransaction()
         }
+    }
+
+    /**
+     * Sets a day's mark from the record calendar and keeps the reading progress in step with
+     * it, so a cleared day no longer counts as read and a day marked done counts in full.
+     */
+    fun setMark(habitId: Long, day: Long, value: Int) {
+        setEntry(habitId, day, value)
+        val a = arrayOf(habitId.toString(), day.toString())
+        if (value == Mark.DONE) {
+            setPartial(habitId, day, 1000)
+        } else {
+            writableDatabase.delete("partials", "habit_id=? AND day=?", a)
+            writableDatabase.delete("progress", "habit_id=? AND day=?", a)
+            writableDatabase.execSQL("UPDATE quran_day SET reached=start WHERE habit_id=? AND day=?", a)
+        }
+    }
+
+    /** The most recent Quran portion before [day], as day, start, end and how far it was read. */
+    fun lastQuranDay(habitId: Long, day: Long): LongArray? {
+        readableDatabase.rawQuery(
+            "SELECT day, start, end, reached FROM quran_day WHERE habit_id=? AND day<? ORDER BY day DESC LIMIT 1",
+            arrayOf(habitId.toString(), day.toString())
+        ).use { c -> if (c.moveToNext()) return longArrayOf(c.getLong(0), c.getLong(1), c.getLong(2), c.getLong(3)) }
+        return null
     }
 
     /** One tap on a habit: a counted habit moves one step toward its target, a plain one flips. */
@@ -416,9 +445,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         return sb.toString()
     }
 
-    fun exportJson(): String {
+    fun exportJson(settings: JSONObject? = null): String {
         val root = JSONObject()
         root.put("app", "daab")
+        if (settings != null) root.put("settings", settings)
         root.put("version", 5)
         val gs = JSONArray()
         for (g in groups()) {
@@ -428,6 +458,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         val hs = JSONArray()
         for (h in habits(true)) {
             val o = JSONObject()
+            o.put("id", h.id)
             o.put("name", h.name)
             o.put("color", h.color)
             o.put("kind", h.kind)
@@ -453,9 +484,21 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             for (it in customItems(h.id)) cs.put(JSONObject().put("text", it.text).put("count", it.count))
             o.put("custom", cs)
             if (h.contentRef == Quran.CONTENT) {
-                o.put("quranPosition", quranState(h.id).first)
+                val state = quranState(h.id)
+                o.put("quranPosition", state.first)
+                o.put("quranPlanEnd", state.second)
                 o.put("quranKhatmas", khatmas(h.id))
             }
+            val pr = JSONArray()
+            readableDatabase.rawQuery("SELECT day, item_id, count FROM progress WHERE habit_id=?", arrayOf(h.id.toString())).use { c ->
+                while (c.moveToNext()) pr.put(JSONArray().put(c.getLong(0)).put(c.getInt(1)).put(c.getInt(2)))
+            }
+            o.put("progress", pr)
+            val qd = JSONArray()
+            readableDatabase.rawQuery("SELECT day, start, end, reached FROM quran_day WHERE habit_id=?", arrayOf(h.id.toString())).use { c ->
+                while (c.moveToNext()) qd.put(JSONArray().put(c.getLong(0)).put(c.getInt(1)).put(c.getInt(2)).put(c.getInt(3)))
+            }
+            o.put("quranDays", qd)
             val ps = JSONArray()
             for ((day, permille) in partials(h.id).toSortedMap()) {
                 ps.put(JSONArray().put(day).put(permille))
@@ -474,7 +517,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
     }
 
     /** Replaces everything with the backup. Files from the first version, without groups, still load. */
-    fun importJson(text: String) {
+    fun importJson(text: String): JSONObject? {
         val root = JSONObject(text)
         if (root.optString("app") != "daab") throw IllegalArgumentException("not a daab backup")
         val hs = root.getJSONArray("habits")
@@ -495,6 +538,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             for (i in 0 until gs.length()) {
                 val o = gs.getJSONObject(i)
                 val newId = db.insert("groups", null, ContentValues().apply {
+                    put("id", o.getLong("id"))
                     put("name", o.getString("name"))
                     put("color", o.getInt("color"))
                     put("position", o.optInt("position"))
@@ -528,8 +572,29 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                             remindEnd = o.optInt("remindEnd"),
                             target = o.optInt("target")
                         )
-                    )
+                    ).apply { if (o.optLong("id") > 0) put("id", o.getLong("id")) }
                 )
+                val pr = o.optJSONArray("progress") ?: JSONArray()
+                for (j in 0 until pr.length()) {
+                    val e = pr.getJSONArray(j)
+                    db.insert("progress", null, ContentValues().apply {
+                        put("habit_id", id)
+                        put("day", e.getLong(0))
+                        put("item_id", e.getInt(1))
+                        put("count", e.getInt(2))
+                    })
+                }
+                val qd = o.optJSONArray("quranDays") ?: JSONArray()
+                for (j in 0 until qd.length()) {
+                    val e = qd.getJSONArray(j)
+                    db.insert("quran_day", null, ContentValues().apply {
+                        put("habit_id", id)
+                        put("day", e.getLong(0))
+                        put("start", e.getInt(1))
+                        put("end", e.getInt(2))
+                        put("reached", e.getInt(3))
+                    })
+                }
                 val cs = o.optJSONArray("custom") ?: JSONArray()
                 for (j in 0 until cs.length()) {
                     val e = cs.getJSONObject(j)
@@ -544,7 +609,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                     db.insert("quran_state", null, ContentValues().apply {
                         put("habit_id", id)
                         put("position", o.getInt("quranPosition"))
-                        put("plan_end", 0)
+                        put("plan_end", o.optLong("quranPlanEnd"))
                         put("khatmas", o.optInt("quranKhatmas"))
                     })
                 }
@@ -578,5 +643,6 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         } finally {
             db.endTransaction()
         }
+        return root.optJSONObject("settings")
     }
 }

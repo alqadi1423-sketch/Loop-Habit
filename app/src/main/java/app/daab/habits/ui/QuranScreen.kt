@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -92,8 +93,10 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
             reached = at
             db.setQuranDay(habitId, today, range.start, range.end, reached)
             db.setPartial(habitId, today, ((reached - range.start) * 1000.0 / size).roundToInt().coerceAtMost(990))
-            changed()
         }
+    }
+    DisposableEffect(habitId) {
+        onDispose { changed() }
     }
 
     fun setFont(value: Int) {
@@ -105,9 +108,11 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         db.setQuranDay(habitId, today, range.start, range.end, range.end)
         db.setPartial(habitId, today, 1000)
         db.setEntry(habitId, today, Mark.DONE)
-        val planEnd = db.quranState(habitId).second
-        if (range.end >= Quran.TOTAL) db.setQuranState(habitId, 0, 0, addKhatma = true)
-        else db.setQuranState(habitId, range.end, planEnd)
+        val (position, planEnd) = db.quranState(habitId)
+        if (position >= range.start && position < range.end) {
+            if (range.end >= Quran.TOTAL) db.setQuranState(habitId, 0, 0, addKhatma = true)
+            else db.setQuranState(habitId, range.end, planEnd)
+        }
         done = true
         reached = range.end
         changed()

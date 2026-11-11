@@ -2,7 +2,11 @@
 
 package app.daab.habits.ui
 
+import android.Manifest
+import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -68,6 +72,7 @@ import app.daab.habits.data.Kind
 import app.daab.habits.data.Mark
 import app.daab.habits.data.Quran
 import app.daab.habits.data.prayerNames
+import app.daab.habits.logic.City
 import app.daab.habits.logic.Hijri
 import app.daab.habits.logic.Phase
 import app.daab.habits.logic.PrayerTimes
@@ -75,6 +80,7 @@ import app.daab.habits.logic.Schedule
 import app.daab.habits.notify.ReminderReceiver
 import app.daab.habits.widget.HabitWidget
 import kotlinx.coroutines.delay
+import org.json.JSONObject
 import kotlin.math.roundToInt
 
 sealed interface Screen {
@@ -100,6 +106,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         ReminderReceiver.scheduleAll(this)
         readerRequest.longValue = intent?.getLongExtra(EXTRA_READER, 0L) ?: 0L
+        intent?.removeExtra(EXTRA_READER)
         setContent {
             DaabTheme { App(resumes.intValue, readerRequest.longValue) { readerRequest.longValue = 0L } }
         }
@@ -108,6 +115,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         readerRequest.longValue = intent.getLongExtra(EXTRA_READER, 0L)
+        intent.removeExtra(EXTRA_READER)
+        setIntent(intent)
     }
 
     override fun onResume() {
@@ -118,11 +127,23 @@ class MainActivity : ComponentActivity() {
 }
 
 class HabitState(
-    val habit: Habit, val dates: Set<Long>, val entries: Map<Long, Int>, val partials: Map<Long, Int>
+    val habit: Habit, val dates: Set<Long>, val entries: Map<Long, Int>, val partials: Map<Long, Int>,
+    val count: Int, val score: Int
 )
 
-fun loadStates(db: Db): List<HabitState> =
-    db.habits().map { HabitState(it, db.dates(it.id), db.entries(it.id), db.partials(it.id)) }
+fun loadStates(db: Db): List<HabitState> {
+    val today = Schedule.today()
+    return db.habits().map {
+        val dates = db.dates(it.id)
+        val entries = db.entries(it.id)
+        val partials = db.partials(it.id)
+        HabitState(
+            it, dates, entries, partials,
+            if (it.target > 0) db.progress(it.id, today)[0] ?: 0 else 0,
+            (Schedule.score(it, dates, entries, today, partials) * 100).roundToInt()
+        )
+    }
+}
 
 val weekdayNames = listOf("أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت")
 
@@ -191,6 +212,14 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
         }
     }
     val states = remember(version, minute) { loadStates(db) }
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(version) {
+        val reminds = states.any { it.habit.reminder >= 0 || it.habit.remindStart || it.habit.remindEnd > 0 }
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (reminds && Build.VERSION.SDK_INT >= 33 && !nm.areNotificationsEnabled()) {
+            askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val groups = remember(version) { db.groups() }
     val times = remember(version, today) { PrayerTimes.forDay(ctx, today) }
     var menu by remember { mutableStateOf(false) }
@@ -199,7 +228,9 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) {
             try {
-                ctx.contentResolver.openOutputStream(uri)?.use { it.write(db.exportJson().toByteArray()) }
+                val c = PrayerTimes.city(ctx)
+                val settings = JSONObject().put("city", c.name).put("lat", c.lat).put("lng", c.lng)
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(db.exportJson(settings).toByteArray()) }
                 Toast.makeText(ctx, "حُفظت النسخة الاحتياطية", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(ctx, "تعذر حفظ النسخة", Toast.LENGTH_LONG).show()
@@ -220,7 +251,9 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
         if (uri != null) {
             try {
                 val text = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
-                db.importJson(text ?: "")
+                db.importJson(text ?: "")?.let { st ->
+                    if (st.has("city")) PrayerTimes.setCity(ctx, City(st.getString("city"), st.getDouble("lat"), st.getDouble("lng")))
+                }
                 ReminderReceiver.scheduleAll(ctx)
                 changed()
                 Toast.makeText(ctx, "استُعيدت النسخة", Toast.LENGTH_SHORT).show()
@@ -405,9 +438,9 @@ fun SectionTitle(text: String) {
 fun HabitRow(s: HabitState, today: Long, times: IntArray, now: Int, active: Boolean, toggle: () -> Unit, open: () -> Unit) {
     val color = Color(s.habit.color)
     val value = s.entries[today] ?: Mark.NONE
-    val score = (Schedule.score(s.habit, s.dates, s.entries, today, s.partials) * 100).roundToInt()
+    val score = s.score
     val readPercent = if (s.habit.contentRef != 0 && value == Mark.NONE) ((s.partials[today] ?: 0) / 10.0).roundToInt() else 0
-    val counted = if (s.habit.target > 0 && value == Mark.NONE) ((s.partials[today] ?: 0) * s.habit.target + 999) / 1000 else -1
+    val counted = if (s.habit.target > 0 && value == Mark.NONE) s.count else -1
     val windowed = Schedule.hasWindow(s.habit)
     val phase = Schedule.phase(s.habit, times, now)
     val missed = active && windowed && phase == Phase.CLOSED && value == Mark.NONE

@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -85,6 +86,10 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         return
     }
 
+    DisposableEffect(habitId) {
+        onDispose { changed() }
+    }
+
     val color = Color(habit.color)
     fun share(): Double = items.sumOf { min(1.0, (counts[it.id] ?: 0).toDouble() / it.count) } / items.size
     val finished = items.all { (counts[it.id] ?: 0) >= it.count }
@@ -103,11 +108,11 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         db.setPartial(habitId, today, (share() * 1000).roundToInt())
         if (items.all { (counts[it.id] ?: 0) >= it.count }) {
             db.setEntry(habitId, today, Mark.DONE)
+            changed()
         } else if (now >= item.count) {
             val next = items.indexOfFirst { (counts[it.id] ?: 0) < it.count }
             if (next >= 0) index = next
         }
-        changed()
     }
 
     Scaffold(

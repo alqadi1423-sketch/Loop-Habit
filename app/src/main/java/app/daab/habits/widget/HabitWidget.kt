@@ -17,6 +17,7 @@ import app.daab.habits.logic.Phase
 import app.daab.habits.logic.PrayerTimes
 import app.daab.habits.logic.Schedule
 import app.daab.habits.notify.Alarms
+import app.daab.habits.notify.ReminderReceiver
 import app.daab.habits.ui.MainActivity
 import app.daab.habits.ui.timeText
 import java.time.LocalDate
@@ -74,7 +75,8 @@ class HabitWidget : AppWidgetProvider() {
 
         private fun openApp(ctx: Context, widgetId: Int): PendingIntent =
             PendingIntent.getActivity(
-                ctx, widgetId, Intent(ctx, MainActivity::class.java),
+                ctx, widgetId,
+                Intent(ctx, MainActivity::class.java).setData(Uri.parse("daab://open/widget/$widgetId")),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
@@ -129,14 +131,21 @@ class HabitWidget : AppWidgetProvider() {
                 }
             }
 
-            fun done(h: Habit) = show(
+            // A finished habit can be unmarked by a second tap only on a square bound to that
+            // one habit. Counted habits and squares that rotate through habits open the app
+            // instead, so a quick extra tap never wipes what was just recorded.
+            fun done(h: Habit, single: Boolean) = show(
                 h.color, WHITE, "✓", h.name,
-                if (h.contentRef != 0) read(ctx, widgetId, h.id) else tap(ctx, widgetId, h.id)
+                when {
+                    h.contentRef != 0 -> read(ctx, widgetId, h.id)
+                    single && h.target == 0 -> tap(ctx, widgetId, h.id)
+                    else -> openApp(ctx, widgetId)
+                }
             )
 
             if (boundGroup == 0L && boundHabit != ALL_HABITS) {
                 val h = db.habit(boundHabit)
-                if (h == null) {
+                if (h == null || h.archived) {
                     show(NEUTRAL, LIGHT, "؟", "العادة محذوفة", openApp(ctx, widgetId))
                 } else {
                     val entries = db.entries(h.id)
@@ -144,7 +153,7 @@ class HabitWidget : AppWidgetProvider() {
                     val due = Schedule.isDue(h, db.dates(h.id), entries, today)
                     val phase = Schedule.phase(h, times, now)
                     when {
-                        v == Mark.DONE -> done(h)
+                        v == Mark.DONE -> done(h, true)
                         v == Mark.EXCUSED -> show(NEUTRAL, LIGHT, "ع", h.name, openApp(ctx, widgetId))
                         !due -> show(NEUTRAL, LIGHT, "·", h.name + "\nليست اليوم", openApp(ctx, widgetId))
                         phase == Phase.BEFORE ->
@@ -165,16 +174,21 @@ class HabitWidget : AppWidgetProvider() {
                 if (!Schedule.isDue(h, db.dates(h.id), entries, today)) continue
                 slots.add(Slot(h, entries[today] ?: Mark.NONE, Schedule.phase(h, times, now), Schedule.window(h, times).first))
             }
-            val open = slots.firstOrNull { it.phase == Phase.OPEN && it.value == Mark.NONE }
+            // Habits whose time is running come first, the one that ends soonest at the front,
+            // then habits that can be done at any time of day.
+            val open = slots.filter { it.phase == Phase.OPEN && it.value == Mark.NONE }
+                .minWithOrNull(compareBy({ !Schedule.hasWindow(it.habit) }, { Schedule.window(it.habit, times).second }))
+            val groupGone = boundGroup != 0L && db.groups().none { it.id == boundGroup }
             val later = slots.filter { it.phase == Phase.BEFORE && it.value == Mark.NONE }.minByOrNull { it.start }
             val missed = slots.any { it.phase == Phase.CLOSED && it.value == Mark.NONE }
             val current = if (boundGroup != 0L) {
                 slots.filter { it.phase == Phase.OPEN && it.value == Mark.DONE && Schedule.hasWindow(it.habit) }.maxByOrNull { it.start }
             } else null
             when {
+                groupGone -> show(NEUTRAL, LIGHT, "؟", "المجموعة محذوفة", openApp(ctx, widgetId))
                 pool.isEmpty() -> show(NEUTRAL, LIGHT, "+", "أضف عادة", openApp(ctx, widgetId))
                 open != null -> pending(open.habit)
-                current != null -> done(current.habit)
+                current != null -> done(current.habit, false)
                 later != null -> show(NEUTRAL, LIGHT, "·", later.habit.name + "\n" + timeText(later.start), openApp(ctx, widgetId))
                 missed -> show(NEUTRAL, LIGHT, "·", "انتهى وقت عادات اليوم", openApp(ctx, widgetId))
                 else -> show(DONE_ALL, WHITE, "✓", "أنجزت عادات اليوم", openApp(ctx, widgetId))
@@ -186,6 +200,7 @@ class HabitWidget : AppWidgetProvider() {
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
         for (id in ids) render(ctx, mgr, id)
         scheduleRefresh(ctx)
+        ReminderReceiver.scheduleAll(ctx)
     }
 
     override fun onDeleted(ctx: Context, ids: IntArray) {
@@ -199,7 +214,16 @@ class HabitWidget : AppWidgetProvider() {
             ACTION_TAP -> {
                 val habitId = intent.getLongExtra(EXTRA_HABIT, 0)
                 val db = Db.get(ctx)
-                db.habit(habitId)?.let { db.tap(it, Schedule.today()) }
+                val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                val now = System.currentTimeMillis()
+                val h = db.habit(habitId)
+                // Ignore a second tap that lands before the square has redrawn.
+                if (h != null && now - prefs.getLong("tap_$habitId", 0) > 1500) {
+                    prefs.edit().putLong("tap_$habitId", now).apply()
+                    val today = Schedule.today()
+                    val finished = db.entries(habitId)[today] == Mark.DONE
+                    if (!(h.target > 0 && finished)) db.tap(h, today)
+                }
                 updateAll(ctx)
             }
             ACTION_REFRESH -> updateAll(ctx)
