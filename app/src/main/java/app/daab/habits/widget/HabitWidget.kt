@@ -1,6 +1,5 @@
 package app.daab.habits.widget
 
-import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
@@ -17,6 +16,7 @@ import app.daab.habits.data.Mark
 import app.daab.habits.logic.Phase
 import app.daab.habits.logic.PrayerTimes
 import app.daab.habits.logic.Schedule
+import app.daab.habits.notify.Alarms
 import app.daab.habits.ui.MainActivity
 import app.daab.habits.ui.timeText
 import java.time.LocalDate
@@ -69,8 +69,7 @@ class HabitWidget : AppWidgetProvider() {
                 ctx, -7, Intent(ctx, HabitWidget::class.java).setAction(ACTION_REFRESH),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            (ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
-                .setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+            Alarms.set(ctx, at, pending)
         }
 
         private fun openApp(ctx: Context, widgetId: Int): PendingIntent =
@@ -119,7 +118,10 @@ class HabitWidget : AppWidgetProvider() {
             }
 
             fun pending(h: Habit) {
-                if (h.contentRef != 0) {
+                if (h.target > 0) {
+                    val count = db.progress(h.id, today)[0] ?: 0
+                    show(NEUTRAL, h.color, "$count/${h.target}", h.name, tap(ctx, widgetId, h.id))
+                } else if (h.contentRef != 0) {
                     val percent = (db.partials(h.id)[today] ?: 0) / 10
                     show(NEUTRAL, h.color, if (percent > 0) "$percent%" else "○", h.name, read(ctx, widgetId, h.id))
                 } else {
@@ -165,6 +167,7 @@ class HabitWidget : AppWidgetProvider() {
             }
             val open = slots.firstOrNull { it.phase == Phase.OPEN && it.value == Mark.NONE }
             val later = slots.filter { it.phase == Phase.BEFORE && it.value == Mark.NONE }.minByOrNull { it.start }
+            val missed = slots.any { it.phase == Phase.CLOSED && it.value == Mark.NONE }
             val current = if (boundGroup != 0L) {
                 slots.filter { it.phase == Phase.OPEN && it.value == Mark.DONE && Schedule.hasWindow(it.habit) }.maxByOrNull { it.start }
             } else null
@@ -173,6 +176,7 @@ class HabitWidget : AppWidgetProvider() {
                 open != null -> pending(open.habit)
                 current != null -> done(current.habit)
                 later != null -> show(NEUTRAL, LIGHT, "·", later.habit.name + "\n" + timeText(later.start), openApp(ctx, widgetId))
+                missed -> show(NEUTRAL, LIGHT, "·", "انتهى وقت عادات اليوم", openApp(ctx, widgetId))
                 else -> show(DONE_ALL, WHITE, "✓", "أنجزت عادات اليوم", openApp(ctx, widgetId))
             }
             mgr.updateAppWidget(widgetId, views)
@@ -194,12 +198,8 @@ class HabitWidget : AppWidgetProvider() {
         when (intent.action) {
             ACTION_TAP -> {
                 val habitId = intent.getLongExtra(EXTRA_HABIT, 0)
-                if (habitId > 0) {
-                    val db = Db.get(ctx)
-                    val today = Schedule.today()
-                    val current = db.entries(habitId)[today] ?: Mark.NONE
-                    db.setEntry(habitId, today, if (current == Mark.DONE) Mark.NONE else Mark.DONE)
-                }
+                val db = Db.get(ctx)
+                db.habit(habitId)?.let { db.tap(it, Schedule.today()) }
                 updateAll(ctx)
             }
             ACTION_REFRESH -> updateAll(ctx)

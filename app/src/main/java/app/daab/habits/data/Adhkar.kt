@@ -13,6 +13,9 @@ class DhikrCategory(val id: Int, val name: String, val items: List<Dhikr>)
  */
 object Adhkar {
 
+    /** Content value of a habit whose adhkar the user wrote. */
+    const val CUSTOM = -2
+
     const val PART_ALL = 0
     const val PART_MORNING = 1
     const val PART_EVENING = 2

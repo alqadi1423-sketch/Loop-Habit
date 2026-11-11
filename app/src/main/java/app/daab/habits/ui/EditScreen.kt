@@ -64,11 +64,13 @@ import androidx.compose.ui.unit.dp
 import app.daab.habits.data.Adhkar
 import app.daab.habits.data.Anchor
 import app.daab.habits.data.Db
+import app.daab.habits.data.Dhikr
 import app.daab.habits.data.Habit
 import app.daab.habits.data.Kind
 import app.daab.habits.data.Palette
 import app.daab.habits.data.Quran
 import app.daab.habits.data.prayerNames
+import app.daab.habits.logic.Hijri
 import app.daab.habits.logic.Schedule
 import app.daab.habits.notify.ReminderReceiver
 import java.time.LocalDate
@@ -101,6 +103,12 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
     var contentUnit by remember { mutableIntStateOf(original?.contentUnit ?: Quran.UNIT_HIZB) }
     var contentAmount by remember { mutableStateOf((original?.contentAmount ?: 1).toString()) }
     var amountError by remember { mutableStateOf(false) }
+    var remindStart by remember { mutableStateOf(original?.remindStart ?: false) }
+    var remindEnd by remember { mutableStateOf((original?.remindEnd ?: 0) > 0) }
+    var target by remember { mutableStateOf((original?.target ?: 0).let { if (it > 0) it.toString() else "" }) }
+    var custom by remember { mutableStateOf(if (id == 0L) emptyList() else db.customItems(id)) }
+    var addCustom by remember { mutableStateOf(false) }
+    var customError by remember { mutableStateOf(false) }
     var contentPart by remember { mutableIntStateOf(original?.contentPart ?: 0) }
     var pickContent by remember { mutableStateOf(false) }
     var pickAnchor by remember { mutableIntStateOf(0) }
@@ -121,6 +129,10 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
             amountError = true
             return
         }
+        if (contentRef == Adhkar.CUSTOM && custom.isEmpty()) {
+            customError = true
+            return
+        }
         val h = (original ?: Habit(created = Schedule.today(), position = db.habits(true).size)).copy(
             name = name.trim(), color = color, kind = kind,
             weekdays = if (weekdays == 0) 127 else weekdays,
@@ -128,9 +140,13 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
             groupId = groupId, startKind = startKind, startValue = startValue,
             endKind = endKind, endValue = endValue,
             contentRef = contentRef, contentPart = contentPart,
-            contentUnit = contentUnit, contentAmount = amount.coerceAtLeast(1)
+            contentUnit = contentUnit, contentAmount = amount.coerceAtLeast(1),
+            remindStart = remindStart && startKind != Anchor.NONE,
+            remindEnd = if (remindEnd && (startKind != Anchor.NONE || endKind != Anchor.NONE)) 15 else 0,
+            target = if (contentRef == 0) (target.toIntOrNull() ?: 0).coerceIn(0, 9999) else 0
         )
         val newId = db.save(h)
+        db.setCustomItems(newId, if (contentRef == Adhkar.CUSTOM) custom else emptyList())
         if (contentRef == Quran.CONTENT && original != null &&
             (original.contentUnit != contentUnit || original.contentAmount != amount)
         ) {
@@ -216,6 +232,22 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                     }
                 }
                 OutlinedButton(onClick = { pickDate = true }) { Text("إضافة يوم") }
+                Text("أيام صيام مقترحة", style = MaterialTheme.typography.labelLarge)
+                val from = Schedule.today()
+                OutlinedButton(onClick = { dates = dates + Hijri.mondaysAndThursdays(from, 60) }) {
+                    Text("الاثنين والخميس لشهرين قادمين")
+                }
+                OutlinedButton(onClick = { dates = dates + Hijri.whiteDays(from, 180) }) {
+                    Text("الأيام البيض لستة أشهر قادمة")
+                }
+                OutlinedButton(onClick = { dates = dates + Hijri.arafahAndAshura(from) }) {
+                    Text("عرفة وعاشوراء القادمان")
+                }
+                Text(
+                    "التواريخ الهجرية بتقويم أم القرى، وقد تتقدم أو تتأخر يومًا بحسب الرؤية. والعيدان وأيام التشريق مستثناة.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             if (groups.isNotEmpty()) {
@@ -234,9 +266,32 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                     when (contentRef) {
                         0 -> "لا شيء، تُعلَّم بضغطة"
                         Quran.CONTENT -> "ورد القرآن"
+                        Adhkar.CUSTOM -> "أذكار أكتبها بنفسي"
                         else -> Adhkar.title(ctx, contentRef, contentPart)
                     }
                 )
+            }
+            if (contentRef == 0) {
+                OutlinedTextField(
+                    value = target,
+                    onValueChange = { v -> target = v.filter { it.isDigit() }.take(4) },
+                    label = { Text("هدف رقمي في اليوم، اختياري") },
+                    supportingText = { Text("مثل 8 لأكواب الماء. كل ضغطة تزيد واحدًا، وتُنجز العادة عند بلوغ العدد.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            if (contentRef == Adhkar.CUSTOM) {
+                for ((i, d) in custom.withIndex()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${d.text}\nالعدد ${d.count}", Modifier.weight(1f))
+                        IconButton(onClick = { custom = custom.filterIndexed { j, _ -> j != i } }) {
+                            Icon(Icons.Default.Close, "إزالة")
+                        }
+                    }
+                }
+                if (customError) Text("أضف ذكرًا واحدًا على الأقل", color = MaterialTheme.colorScheme.error)
+                OutlinedButton(onClick = { addCustom = true }) { Text("إضافة ذكر") }
             }
             if (contentRef == Quran.CONTENT) {
                 Text("مقدار الورد", style = MaterialTheme.typography.labelLarge)
@@ -277,9 +332,28 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                 }
             }
 
+            if (startKind != Anchor.NONE) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("تنبيه عند دخول وقتها", Modifier.weight(1f))
+                    Switch(checked = remindStart, onCheckedChange = {
+                        remindStart = it
+                        if (it && Build.VERSION.SDK_INT >= 33) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    })
+                }
+            }
+            if (startKind != Anchor.NONE || endKind != Anchor.NONE) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("تنبيه قبل خروج وقتها بربع ساعة", Modifier.weight(1f))
+                    Switch(checked = remindEnd, onCheckedChange = {
+                        remindEnd = it
+                        if (it && Build.VERSION.SDK_INT >= 33) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    })
+                }
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("تذكير", style = MaterialTheme.typography.labelLarge)
+                    Text("تذكير بساعة ثابتة", style = MaterialTheme.typography.labelLarge)
                     if (reminder >= 0) TextButton(onClick = { pickTime = true }) { Text(timeText(reminder)) }
                 }
                 Switch(checked = reminder >= 0, onCheckedChange = {
@@ -293,6 +367,13 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
 
             Spacer(Modifier.height(4.dp))
             Button(onClick = { save() }, modifier = Modifier.fillMaxWidth()) { Text("حفظ") }
+            if (original != null) {
+                OutlinedButton(onClick = {
+                    db.save(original.copy(archived = true))
+                    ReminderReceiver.cancel(ctx, original.id)
+                    saved()
+                }, modifier = Modifier.fillMaxWidth()) { Text("أرشفة العادة مع حفظ سجلها") }
+            }
         }
     }
 
@@ -326,6 +407,45 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
         )
     }
 
+    if (addCustom) {
+        var text by remember { mutableStateOf("") }
+        var count by remember { mutableStateOf("1") }
+        var error by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { addCustom = false },
+            title = { Text("إضافة ذكر") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it; error = false },
+                        label = { Text("نص الذكر") },
+                        isError = error,
+                        supportingText = { if (error) Text("اكتب نص الذكر") },
+                        minLines = 3
+                    )
+                    OutlinedTextField(
+                        value = count,
+                        onValueChange = { v -> count = v.filter { it.isDigit() }.take(4) },
+                        label = { Text("عدد المرات") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (text.isBlank()) error = true
+                    else {
+                        custom = custom + Dhikr(custom.size + 1, text.trim(), (count.toIntOrNull() ?: 1).coerceAtLeast(1))
+                        customError = false
+                        addCustom = false
+                    }
+                }) { Text("إضافة") }
+            },
+            dismissButton = { TextButton(onClick = { addCustom = false }) { Text("إلغاء") } }
+        )
+    }
+
     if (pickContent) {
         val categories = remember { Adhkar.categories(ctx) }
         fun set(ref: Int, part: Int) {
@@ -340,6 +460,7 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                 LazyColumn {
                     item { TextButton(onClick = { set(0, 0) }) { Text("لا شيء، تُعلَّم بضغطة") } }
                     item { TextButton(onClick = { set(Quran.CONTENT, 0) }) { Text("ورد القرآن") } }
+                    item { TextButton(onClick = { set(Adhkar.CUSTOM, 0) }) { Text("أذكار أكتبها بنفسي") } }
                     item { TextButton(onClick = { set(Adhkar.MORNING_EVENING, Adhkar.PART_MORNING) }) { Text("أذكار الصباح") } }
                     item { TextButton(onClick = { set(Adhkar.MORNING_EVENING, Adhkar.PART_EVENING) }) { Text("أذكار المساء") } }
                     items(categories.filter { it.id != Adhkar.MORNING_EVENING }) { c ->

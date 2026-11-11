@@ -43,7 +43,13 @@ data class Habit(
     val contentPart: Int = 0,
     /** For a Quran habit: how the daily portion is measured and how much of it. */
     val contentUnit: Int = 0,
-    val contentAmount: Int = 1
+    val contentAmount: Int = 1,
+    /** Notify when the habit's time window opens. */
+    val remindStart: Boolean = false,
+    /** Notify this many minutes before the window closes, 0 for no notice. */
+    val remindEnd: Int = 0,
+    /** Daily count to reach for a counted habit such as cups of water, 0 for a plain check. */
+    val target: Int = 0
 )
 
 data class Group(

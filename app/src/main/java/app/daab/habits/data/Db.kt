@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 import org.json.JSONObject
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 4) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", null, 5) {
 
     companion object {
         @Volatile
@@ -34,12 +34,68 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         addGroups(db)
         addReading(db)
         addQuran(db)
+        addExtras(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) addGroups(db)
         if (oldVersion < 3) addReading(db)
         if (oldVersion < 4) addQuran(db)
+        if (oldVersion < 5) addExtras(db)
+    }
+
+    private fun addExtras(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE habits ADD COLUMN remind_start INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE habits ADD COLUMN remind_end INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE habits ADD COLUMN target INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE custom_items(habit_id INTEGER NOT NULL, item_id INTEGER NOT NULL, text TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(habit_id, item_id))")
+    }
+
+    /** Adhkar the user wrote for a habit, in their order. */
+    fun customItems(habitId: Long): List<Dhikr> {
+        val out = ArrayList<Dhikr>()
+        readableDatabase.rawQuery(
+            "SELECT item_id, text, count FROM custom_items WHERE habit_id=? ORDER BY item_id", arrayOf(habitId.toString())
+        ).use { c -> while (c.moveToNext()) out.add(Dhikr(c.getInt(0), c.getString(1), c.getInt(2))) }
+        return out
+    }
+
+    fun setCustomItems(habitId: Long, items: List<Dhikr>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("custom_items", "habit_id=?", arrayOf(habitId.toString()))
+            items.forEachIndexed { i, it ->
+                db.insert("custom_items", null, ContentValues().apply {
+                    put("habit_id", habitId)
+                    put("item_id", i + 1)
+                    put("text", it.text)
+                    put("count", it.count)
+                })
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** One tap on a habit: a counted habit moves one step toward its target, a plain one flips. */
+    fun tap(h: Habit, day: Long) {
+        val current = entries(h.id)[day] ?: Mark.NONE
+        if (h.target <= 0) {
+            setEntry(h.id, day, if (current == Mark.DONE) Mark.NONE else Mark.DONE)
+            return
+        }
+        if (current == Mark.DONE) {
+            setEntry(h.id, day, Mark.NONE)
+            setProgress(h.id, day, 0, 0)
+            setPartial(h.id, day, 0)
+            return
+        }
+        val count = (progress(h.id, day)[0] ?: 0) + 1
+        setProgress(h.id, day, 0, count)
+        setPartial(h.id, day, (count * 1000 / h.target).coerceAtMost(1000))
+        if (count >= h.target) setEntry(h.id, day, Mark.DONE)
     }
 
     private fun addQuran(db: SQLiteDatabase) {
@@ -134,7 +190,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                         contentRef = int("content_ref"),
                         contentPart = int("content_part"),
                         contentUnit = int("content_unit"),
-                        contentAmount = int("content_amount")
+                        contentAmount = int("content_amount"),
+                        remindStart = int("remind_start") != 0,
+                        remindEnd = int("remind_end"),
+                        target = int("target")
                     )
                 )
             }
@@ -163,6 +222,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         put("content_part", h.contentPart)
         put("content_unit", h.contentUnit)
         put("content_amount", h.contentAmount)
+        put("remind_start", if (h.remindStart) 1 else 0)
+        put("remind_end", h.remindEnd)
+        put("target", h.target)
     }
 
     fun save(h: Habit): Long {
@@ -185,6 +247,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         db.delete("partials", "habit_id=?", a)
         db.delete("quran_state", "habit_id=?", a)
         db.delete("quran_day", "habit_id=?", a)
+        db.delete("custom_items", "habit_id=?", a)
     }
 
     /** How many times each dhikr was counted on that day. */
@@ -331,10 +394,32 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
         }
     }
 
+    /** Every logged day of every habit as a spreadsheet, for reading outside the app. */
+    fun exportCsv(): String {
+        val sb = StringBuilder("\uFEFFالعادة,التاريخ,الحالة,النسبة\n")
+        for (h in habits(true)) {
+            val es = entries(h.id)
+            val ps = partials(h.id)
+            for (day in (es.keys + ps.keys).toSortedSet()) {
+                val v = es[day] ?: Mark.NONE
+                val state = when (v) {
+                    Mark.DONE -> "منجزة"
+                    Mark.EXCUSED -> "معذور"
+                    else -> "غير مكتملة"
+                }
+                val percent = if (v == Mark.DONE) 100 else (ps[day] ?: 0) / 10
+                val name = "\"" + h.name.replace("\"", "\"\"") + "\""
+                sb.append(name).append(',').append(java.time.LocalDate.ofEpochDay(day)).append(',')
+                    .append(state).append(',').append(percent).append('\n')
+            }
+        }
+        return sb.toString()
+    }
+
     fun exportJson(): String {
         val root = JSONObject()
         root.put("app", "daab")
-        root.put("version", 4)
+        root.put("version", 5)
         val gs = JSONArray()
         for (g in groups()) {
             gs.put(JSONObject().put("id", g.id).put("name", g.name).put("color", g.color).put("position", g.position))
@@ -361,6 +446,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             o.put("contentPart", h.contentPart)
             o.put("contentUnit", h.contentUnit)
             o.put("contentAmount", h.contentAmount)
+            o.put("remindStart", h.remindStart)
+            o.put("remindEnd", h.remindEnd)
+            o.put("target", h.target)
+            val cs = JSONArray()
+            for (it in customItems(h.id)) cs.put(JSONObject().put("text", it.text).put("count", it.count))
+            o.put("custom", cs)
             if (h.contentRef == Quran.CONTENT) {
                 o.put("quranPosition", quranState(h.id).first)
                 o.put("quranKhatmas", khatmas(h.id))
@@ -399,6 +490,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
             db.delete("partials", null, null)
             db.delete("quran_state", null, null)
             db.delete("quran_day", null, null)
+            db.delete("custom_items", null, null)
             val groupIds = HashMap<Long, Long>()
             for (i in 0 until gs.length()) {
                 val o = gs.getJSONObject(i)
@@ -431,10 +523,23 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "daab.db", nu
                             contentRef = o.optInt("contentRef"),
                             contentPart = o.optInt("contentPart"),
                             contentUnit = o.optInt("contentUnit"),
-                            contentAmount = o.optInt("contentAmount", 1)
+                            contentAmount = o.optInt("contentAmount", 1),
+                            remindStart = o.optBoolean("remindStart"),
+                            remindEnd = o.optInt("remindEnd"),
+                            target = o.optInt("target")
                         )
                     )
                 )
+                val cs = o.optJSONArray("custom") ?: JSONArray()
+                for (j in 0 until cs.length()) {
+                    val e = cs.getJSONObject(j)
+                    db.insert("custom_items", null, ContentValues().apply {
+                        put("habit_id", id)
+                        put("item_id", j + 1)
+                        put("text", e.getString("text"))
+                        put("count", e.getInt("count"))
+                    })
+                }
                 if (o.has("quranPosition")) {
                     db.insert("quran_state", null, ContentValues().apply {
                         put("habit_id", id)

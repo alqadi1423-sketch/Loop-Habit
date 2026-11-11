@@ -68,16 +68,19 @@ import app.daab.habits.data.Kind
 import app.daab.habits.data.Mark
 import app.daab.habits.data.Quran
 import app.daab.habits.data.prayerNames
+import app.daab.habits.logic.Hijri
 import app.daab.habits.logic.Phase
 import app.daab.habits.logic.PrayerTimes
 import app.daab.habits.logic.Schedule
 import app.daab.habits.notify.ReminderReceiver
 import app.daab.habits.widget.HabitWidget
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 sealed interface Screen {
     data object Home : Screen
     data object Settings : Screen
+    data object Archived : Screen
     data class Edit(val id: Long, val quran: Boolean = false) : Screen
     data class Detail(val id: Long) : Screen
     data class Reader(val id: Long) : Screen
@@ -166,6 +169,7 @@ fun App(resumes: Int, readerRequest: Long, readerHandled: () -> Unit) {
     when (val s = screen) {
         is Screen.Home -> HomeScreen(db, version + resumes, changed, { screen = it })
         is Screen.Settings -> SettingsScreen({ changed(); screen = Screen.Home })
+        is Screen.Archived -> ArchivedScreen(db, version, changed, { screen = Screen.Home })
         is Screen.Edit -> EditScreen(db, s.id, s.quran, { changed(); screen = Screen.Home }, { screen = Screen.Home })
         is Screen.Detail -> DetailScreen(db, s.id, version, changed, { screen = it })
         is Screen.Reader ->
@@ -179,9 +183,16 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
     val ctx = LocalContext.current
     val today = Schedule.today()
     val now = Schedule.nowMinutes()
-    val states = remember(version) { loadStates(db) }
+    var minute by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            minute++
+        }
+    }
+    val states = remember(version, minute) { loadStates(db) }
     val groups = remember(version) { db.groups() }
-    val times = remember(version) { PrayerTimes.forDay(ctx, today) }
+    val times = remember(version, today) { PrayerTimes.forDay(ctx, today) }
     var menu by remember { mutableStateOf(false) }
     var editGroup by remember { mutableStateOf<Group?>(null) }
 
@@ -192,6 +203,16 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
                 Toast.makeText(ctx, "حُفظت النسخة الاحتياطية", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(ctx, "تعذر حفظ النسخة", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    val csvExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) {
+            try {
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(db.exportCsv().toByteArray()) }
+                Toast.makeText(ctx, "حُفظ الجدول", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "تعذر حفظ الجدول", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -212,7 +233,16 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("دَأب") },
+                title = {
+                    Column {
+                        Text("دَأب")
+                        Text(
+                            Hijri.text(today),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
                 actions = {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "القائمة") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -238,6 +268,14 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
                         DropdownMenuItem(text = { Text("المدينة ومواقيت الصلاة") }, onClick = {
                             menu = false
                             go(Screen.Settings)
+                        })
+                        DropdownMenuItem(text = { Text("العادات المؤرشفة") }, onClick = {
+                            menu = false
+                            go(Screen.Archived)
+                        })
+                        DropdownMenuItem(text = { Text("تصدير السجل جدولًا") }, onClick = {
+                            menu = false
+                            csvExporter.launch("daab-log.csv")
                         })
                         DropdownMenuItem(text = { Text("حفظ نسخة احتياطية") }, onClick = {
                             menu = false
@@ -271,8 +309,7 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
                 if (s.habit.contentRef != 0) {
                     go(Screen.Reader(s.habit.id))
                 } else {
-                    val v = s.entries[today] ?: Mark.NONE
-                    db.setEntry(s.habit.id, today, if (v == Mark.DONE) Mark.NONE else Mark.DONE)
+                    db.tap(s.habit, today)
                     changed()
                 }
             }
@@ -370,6 +407,7 @@ fun HabitRow(s: HabitState, today: Long, times: IntArray, now: Int, active: Bool
     val value = s.entries[today] ?: Mark.NONE
     val score = (Schedule.score(s.habit, s.dates, s.entries, today, s.partials) * 100).roundToInt()
     val readPercent = if (s.habit.contentRef != 0 && value == Mark.NONE) ((s.partials[today] ?: 0) / 10.0).roundToInt() else 0
+    val counted = if (s.habit.target > 0 && value == Mark.NONE) (s.partials[today] ?: 0) * s.habit.target / 1000 else -1
     val windowed = Schedule.hasWindow(s.habit)
     val phase = Schedule.phase(s.habit, times, now)
     val missed = active && windowed && phase == Phase.CLOSED && value == Mark.NONE
@@ -395,6 +433,7 @@ fun HabitRow(s: HabitState, today: Long, times: IntArray, now: Int, active: Bool
             if (value == Mark.DONE) Icon(Icons.Default.Check, "منجزة", tint = Color.White)
             if (value == Mark.EXCUSED) Text("ع", color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (readPercent > 0) Text("$readPercent", style = MaterialTheme.typography.labelMedium, color = color)
+            if (counted >= 0) Text("$counted/${s.habit.target}", style = MaterialTheme.typography.labelSmall, color = color)
         }
         Column(Modifier.weight(1f)) {
             Text(s.habit.name, style = MaterialTheme.typography.titleMedium)
@@ -419,5 +458,43 @@ fun HabitRow(s: HabitState, today: Long, times: IntArray, now: Int, active: Bool
         }
         Text("$score%", style = MaterialTheme.typography.labelLarge, color = color)
         Spacer(Modifier.width(2.dp))
+    }
+}
+
+@Composable
+fun ArchivedScreen(db: Db, version: Int, changed: () -> Unit, back: () -> Unit) {
+    val ctx = LocalContext.current
+    val archived = remember(version) { db.habits(true).filter { it.archived } }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("العادات المؤرشفة") },
+                navigationIcon = { TextButton(onClick = back) { Text("رجوع") } }
+            )
+        }
+    ) { pad ->
+        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState())) {
+            if (archived.isEmpty()) {
+                Text(
+                    "لا عادات مؤرشفة. تؤرشف العادة من صفحة تعديلها، وسجلها يبقى محفوظًا.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(20.dp)
+                )
+            }
+            for (h in archived) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(h.name, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = {
+                        db.save(h.copy(archived = false))
+                        ReminderReceiver.schedule(ctx, h.copy(archived = false))
+                        changed()
+                    }) { Text("استرجاع") }
+                }
+                HorizontalDivider()
+            }
+        }
     }
 }

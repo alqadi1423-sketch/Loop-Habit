@@ -55,7 +55,11 @@ fun ReaderScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
     val ctx = LocalContext.current
     val habit = remember(habitId) { db.habit(habitId) }
     val items = remember(habitId) {
-        if (habit == null) emptyList() else Adhkar.items(ctx, habit.contentRef, habit.contentPart)
+        when {
+            habit == null -> emptyList()
+            habit.contentRef == Adhkar.CUSTOM -> db.customItems(habitId)
+            else -> Adhkar.items(ctx, habit.contentRef, habit.contentPart)
+        }
     }
     val today = remember { Schedule.today() }
     val counts = remember(habitId) {
