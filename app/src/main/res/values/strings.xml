@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">دَأب</string>
+    <string name="widget_name">مربع العادة</string>
+    <string name="widget_desc">يعرض عادة اليوم وتعلّمها بضغطة</string>
+</resources>
