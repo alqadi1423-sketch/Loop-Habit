@@ -35,6 +35,18 @@ android {
         debug {
             if (hasFixedKey) signingConfig = signingConfigs.getByName("fixed")
         }
+        release {
+            // The optimized build: the debug one runs Compose several times slower.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            if (hasFixedKey) signingConfig = signingConfigs.getByName("fixed")
+        }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     compileOptions {
