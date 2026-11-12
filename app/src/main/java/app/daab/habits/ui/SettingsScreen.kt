@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.daab.habits.data.Db
+import app.daab.habits.data.Mushaf
 import app.daab.habits.data.LoopImport
 import java.io.File
 import app.daab.habits.data.prayerNames
@@ -202,6 +203,24 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
                     )
                     for ((value, label) in themes) {
                         FilterChip(selected = Settings.theme == value, onClick = { Settings.setTheme(ctx, value) }, label = { Text(label) })
+                    }
+                }
+            }
+
+            SectionLabel("المصحف")
+            Panel(padding = 14.dp) {
+                var edition by remember { mutableStateOf(Mushaf.edition(ctx)) }
+                Text("الطبعة", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "الطبعتان من مجمع الملك فهد، وتتفقان في بداية كل صفحة ونهايتها، وتختلفان في توزيع الأسطر في بعض الصفحات. اختر التي تطابق مصحفك الورقي.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for ((value, label) in listOf(Mushaf.QCF2 to "الإصدار الثاني", Mushaf.QCF4 to "طبعة 1441هـ")) {
+                        FilterChip(selected = edition == value, onClick = {
+                            Mushaf.setEdition(ctx, value)
+                            edition = value
+                        }, label = { Text(label) })
                     }
                 }
             }

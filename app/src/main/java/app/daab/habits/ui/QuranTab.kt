@@ -67,7 +67,7 @@ fun QuranTab(db: Db, version: Int, go: (Screen) -> Unit) {
     val quran = remember { Quran.text(ctx) }
     val wird = remember(version) { db.habits().firstOrNull { it.contentRef == Quran.CONTENT } }
     val prefs = remember { ctx.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    val last = remember(version) { prefs.getInt("quran_last", -1) }
+    val last = remember(version) { prefs.getInt("mushaf_page", -1) }
     var quarters by remember { mutableStateOf(false) }
     fun juzOf(position: Int) = quran.rub.indexOfLast { it <= position } / 8
 
@@ -96,12 +96,9 @@ fun QuranTab(db: Db, version: Int, go: (Screen) -> Unit) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text("آخر موضع قرأته", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(quran.label(last), style = MaterialTheme.typography.titleMedium)
+                                Text("صفحة " + arabicDigits(last + 1), style = MaterialTheme.typography.titleMedium)
                             }
-                            TextButton(onClick = {
-                                val s = quran.surahs[quran.surahAt(last)]
-                                go(Screen.QuranRead(last, s.start + s.count))
-                            }) { Text("تابع") }
+                            TextButton(onClick = { go(Screen.Mushaf(0, last)) }) { Text("تابع") }
                         }
                     }
                 }
@@ -124,7 +121,7 @@ fun QuranTab(db: Db, version: Int, go: (Screen) -> Unit) {
                         )
                     }
                     Row(
-                        Modifier.fillMaxWidth().clickable { go(Screen.QuranRead(s.start, s.start + s.count)) }.padding(vertical = 8.dp),
+                        Modifier.fillMaxWidth().clickable { go(Screen.Mushaf(s.start)) }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
@@ -140,7 +137,6 @@ fun QuranTab(db: Db, version: Int, go: (Screen) -> Unit) {
                 }
             } else {
                 itemsIndexed(quran.rub.toList()) { i, start ->
-                    val end = if (i + 1 < quran.rub.size) quran.rub[i + 1] else Quran.TOTAL
                     if (i % 8 == 0) {
                         Text(
                             "الجزء " + ordinals[(i / 8).coerceIn(0, 29)],
@@ -150,7 +146,7 @@ fun QuranTab(db: Db, version: Int, go: (Screen) -> Unit) {
                         )
                     }
                     Row(
-                        Modifier.fillMaxWidth().clickable { go(Screen.QuranRead(start, end)) }.padding(vertical = 10.dp),
+                        Modifier.fillMaxWidth().clickable { go(Screen.Mushaf(start)) }.padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
@@ -165,99 +161,3 @@ fun QuranTab(db: Db, version: Int, go: (Screen) -> Unit) {
     }
 }
 
-/** Reading a stretch of the Quran that is not tied to a habit, opened from the Quran page. */
-@Composable
-fun QuranReadScreen(start: Int, end: Int, back: () -> Unit, go: (Screen) -> Unit) {
-    val ctx = LocalContext.current
-    val quran = remember { Quran.text(ctx) }
-    val font = remember { FontFamily(Font(R.font.uthmanic_hafs)) }
-    val prefs = remember { ctx.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    var fontSize by remember { mutableIntStateOf(prefs.getInt("quran_font", 26)) }
-    // Each block is a run of ayat within one surah, with the surah's name when it opens there.
-    val blocks = remember(start, end) {
-        val out = ArrayList<Triple<Int, Int, Boolean>>()
-        var i = start
-        while (i < end) {
-            val s = quran.surahs[quran.surahAt(i)]
-            val limit = minOf(end, s.start + s.count, i + 8)
-            out.add(Triple(i, limit, i == s.start))
-            i = limit
-        }
-        out
-    }
-    val list = rememberLazyListState()
-    val first by remember { derivedStateOf { list.firstVisibleItemIndex } }
-    DisposableEffect(start, end) {
-        onDispose {
-            val at = blocks.getOrNull(list.firstVisibleItemIndex)?.first ?: start
-            prefs.edit().putInt("quran_last", at).apply()
-        }
-    }
-    val at = blocks.getOrNull(first)?.first ?: start
-    val juz = quran.rub.indexOfLast { it <= at } / 8 + 1
-    val hizb = quran.rub.indexOfLast { it <= at } / 4 + 1
-
-    fun setFont(value: Int) {
-        fontSize = value.coerceIn(18, 44)
-        prefs.edit().putInt("quran_font", fontSize).apply()
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(quran.surahs[quran.surahAt(at)].name)
-                        Text(
-                            "الجزء $juz، الحزب $hizb",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") } },
-                actions = {
-                    TextButton(onClick = { setFont(fontSize - 2) }) { Text("أ-") }
-                    TextButton(onClick = { setFont(fontSize + 2) }) { Text("أ+") }
-                }
-            )
-        }
-    ) { pad ->
-        LazyColumn(state = list, modifier = Modifier.padding(pad).fillMaxSize().padding(horizontal = 18.dp)) {
-            itemsIndexed(blocks) { _, b ->
-                Column(Modifier.fillMaxWidth()) {
-                    if (b.third) {
-                        val s = quran.surahs[quran.surahAt(b.first)]
-                        HorizontalDivider(Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                        Text(
-                            "سورة ${s.name}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
-                        )
-                        if (s.basmala) {
-                            Text(
-                                quran.basmala(), fontFamily = font, fontSize = fontSize.sp, lineHeight = (fontSize * 2f).sp,
-                                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                    Text(
-                        (b.first until b.second).joinToString(" ") { quran.ayat[it] },
-                        fontFamily = font, fontSize = fontSize.sp, lineHeight = (fontSize * 2f).sp,
-                        textAlign = TextAlign.Justify, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
-                    )
-                }
-            }
-            item {
-                if (end < Quran.TOTAL) {
-                    val next = quran.surahs[quran.surahAt(end)]
-                    Button(
-                        onClick = { go(Screen.QuranRead(end, next.start + next.count)) },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp)
-                    ) { Text("تابع القراءة: " + quran.label(end)) }
-                }
-            }
-        }
-    }
-}

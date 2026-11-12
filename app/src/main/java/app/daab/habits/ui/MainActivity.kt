@@ -60,7 +60,7 @@ sealed interface Screen {
     data object Adhkar : Screen
     data object QuranTab : Screen
     data class AdhkarRead(val category: Int, val part: Int) : Screen
-    data class QuranRead(val start: Int, val end: Int) : Screen
+    data class Mushaf(val ayah: Int, val page: Int = -1) : Screen
     data object Settings : Screen
     data object Archived : Screen
     data class Edit(val id: Long, val quran: Boolean = false) : Screen
@@ -180,7 +180,7 @@ fun App(resumes: Int, readerRequest: Long, readerHandled: () -> Unit) {
         is Screen.Adhkar -> AdhkarScreen(db, version, go)
         is Screen.QuranTab -> QuranTab(db, version, go)
         is Screen.AdhkarRead -> ReaderScreen(db, 0, changed, { go(tab) }, s)
-        is Screen.QuranRead -> QuranReadScreen(s.start, s.end, { changed(); go(tab) }, go)
+        is Screen.Mushaf -> MushafScreen(s.ayah, s.page) { changed(); go(tab) }
         is Screen.Settings -> SettingsScreen(db, changed, go)
         is Screen.Archived -> ArchivedScreen(db, version, changed, { go(Screen.Settings) })
         is Screen.Edit -> EditScreen(db, s.id, s.quran, { changed(); go(tab) }, { go(tab) })
