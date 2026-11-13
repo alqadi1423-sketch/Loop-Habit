@@ -82,9 +82,9 @@ fun MushafScreen(ayah: Int, page: Int, back: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text(quran.surahs[quran.surahAt(first)].name)
+                        Text("سورة " + quran.surahs[quran.surahAt(first)].name)
                         Text(
-                            "صفحة " + arabicDigits(pager.currentPage + 1),
+                            juzName(quran, first) + "، صفحة " + arabicDigits(pager.currentPage + 1),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -99,7 +99,7 @@ fun MushafScreen(ayah: Int, page: Int, back: () -> Unit) {
         containerColor = mushafPaper()
     ) { pad ->
         HorizontalPager(state = pager, beyondViewportPageCount = 1, modifier = Modifier.padding(pad).fillMaxSize()) { p ->
-            MushafPage(data, quran, p, Modifier.fillMaxSize(), highlight = current, word = word)
+            MushafPage(data, quran, p, Modifier.fillMaxSize(), highlight = current, word = word, header = false)
         }
     }
 }

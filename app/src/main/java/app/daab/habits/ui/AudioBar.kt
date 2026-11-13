@@ -54,8 +54,9 @@ fun AudioBar(quran: QuranText, startAt: () -> Int, end: Int, bottom: Boolean = t
             QuranAudio.lastResult.value = null
         }
     }
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+    Surface(color = mushafPaper()) {
         Column(Modifier.fillMaxWidth().then(if (bottom) Modifier.navigationBarsPadding() else Modifier)) {
+            androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             download?.let { d ->
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

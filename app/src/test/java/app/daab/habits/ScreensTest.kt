@@ -56,7 +56,7 @@ class ScreensTest {
         val today = Schedule.today()
         db.addPrayerGroup(today)
         db.addAdhkarGroup(today)
-        db.save(Habit(name = "ورد القرآن", contentRef = Quran.CONTENT, contentUnit = Quran.UNIT_HIZB, contentAmount = 1, created = today - 60, color = 0))
+        db.save(Habit(name = "ورد القرآن", contentRef = Quran.CONTENT, contentUnit = Quran.UNIT_HIZB, contentAmount = 1, created = today - 60))
         db.save(Habit(name = "شرب الماء", target = 8, created = today - 60))
         db.save(Habit(name = "صيام م", kind = Kind.WEEKDAYS, weekdays = (1 shl 1) or (1 shl 4), created = today - 60))
         for (h in db.habits()) for (d in 1..45) {

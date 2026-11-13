@@ -78,7 +78,7 @@ jobs:
           disable-animations: true
           script: |
             gradle :app:connectedDebugAndroidTest --no-daemon > device.log 2>&1 || true
-            adb pull /sdcard/Android/data/app.daab.habits/files/audio_check.txt audio_check.txt || true
+            mkdir -p device-shots && for f in $(adb shell ls /data/local/tmp/ | tr -d '\r' | grep png); do adb pull /data/local/tmp/$f device-shots/$f; done || true
             adb logcat -d -s AndroidRuntime:E DaabCheck:I > logcat.txt || true
       - name: Publish results
         if: always()
@@ -87,7 +87,8 @@ jobs:
           cp -r app/build/shots/* /tmp/out/shots/ 2>/dev/null || true
           tail -n 300 unit.log > /tmp/out/unit.log 2>/dev/null || true
           tail -n 300 device.log > /tmp/out/device.log 2>/dev/null || true
-          cp audio_check.txt logcat.txt /tmp/out/ 2>/dev/null || true
+          cp logcat.txt /tmp/out/ 2>/dev/null || true
+          cp -r device-shots /tmp/out/ 2>/dev/null || true
           find app/build/test-results -name "*.xml" -exec cp {} /tmp/out/ \; 2>/dev/null || true
           find app/build/outputs/androidTest-results -name "*.xml" -exec cp {} /tmp/out/ \; 2>/dev/null || true
           cd /tmp/out && git init -q -b checks

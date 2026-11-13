@@ -1,5 +1,7 @@
 package app.daab.habits.ui
 
+import androidx.compose.ui.unit.dp
+
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -109,9 +111,18 @@ fun habitTint(color: Int): Color {
     ) else c
 }
 
+/** One set of corners for the whole app: fields, cards, menus and sheets. */
+private val shapes = androidx.compose.material3.Shapes(
+    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+    small = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+    large = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
+)
+
 @Composable
 fun DaabTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isDark()) Dark else Light, typography = typography()) {
+    MaterialTheme(colorScheme = if (isDark()) Dark else Light, typography = typography(), shapes = shapes) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, content = content)
     }
 }

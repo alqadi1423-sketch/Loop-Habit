@@ -129,7 +129,7 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         bottomBar = {
           Column {
             AudioBar(quran, { data.firstAyah(firstPage + pager.currentPage).coerceIn(range.start, range.end - 1) }, range.end, bottom = false)
-            Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+            Surface(color = mushafPaper()) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LinearProgressIndicator(progress = { share }, color = color, modifier = Modifier.weight(1f))
