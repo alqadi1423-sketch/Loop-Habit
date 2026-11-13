@@ -36,7 +36,7 @@ class AudioPlaybackTest {
                 Thread.sleep(40)
             }
             InstrumentationRegistry.getInstrumentation().runOnMainSync { QuranAudioService.stop(ctx) }
-            File(ctx.getExternalFilesDir(null), "audio_check.txt").writeText(log.toString())
+            for (line in log.lines()) android.util.Log.i("DaabCheck", line)
             assertTrue("words lit: $words\n$log", words >= 20)
         }
     }

@@ -5,7 +5,8 @@ import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
 import androidx.test.core.app.ApplicationProvider
@@ -43,7 +44,7 @@ import java.io.File
 class ScreensTest {
 
     @get:Rule
-    val rule = createComposeRule()
+    val rule = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var db: Db
     private val ctx: Context get() = ApplicationProvider.getApplicationContext()
@@ -69,8 +70,11 @@ class ScreensTest {
         if (waitFor != null) rule.waitUntil(30_000) {
             rule.onAllNodesWithText(waitFor, substring = true).fetchSemanticsNodes().isNotEmpty()
         }
+        rule.mainClock.advanceTimeBy(1500)
         rule.waitForIdle()
-        val bmp = rule.onRoot().captureToImage().asAndroidBitmap()
+        val view = rule.activity.window.decorView
+        val bmp = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        rule.runOnUiThread { view.draw(android.graphics.Canvas(bmp)) }
         val dir = File("build/shots").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }

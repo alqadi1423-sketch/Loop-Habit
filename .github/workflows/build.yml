@@ -79,7 +79,7 @@ jobs:
           script: |
             gradle :app:connectedDebugAndroidTest --no-daemon > device.log 2>&1 || true
             adb pull /sdcard/Android/data/app.daab.habits/files/audio_check.txt audio_check.txt || true
-            adb logcat -d -s AndroidRuntime:E MediaPlayer:* MediaPlayerNative:* QuranAudio:* > logcat.txt || true
+            adb logcat -d -s AndroidRuntime:E DaabCheck:I > logcat.txt || true
       - name: Publish results
         if: always()
         run: |
