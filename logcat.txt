@@ -1,0 +1,32 @@
+--------- beginning of main
+11-13 02:38:17.850  5111  5159 I DaabCheck: 1 ms ayah -1 word -1 - playing false
+11-13 02:38:17.850  5111  5159 I DaabCheck: 847 ms ayah 0 word 0 بِسۡمِ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 1571 ms ayah 0 word 1 ٱللَّهِ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 2415 ms ayah 0 word 2 ٱلرَّحۡمَٰنِ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 3499 ms ayah 0 word 3 ٱلرَّحِيمِ ١ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 7042 ms ayah 1 word 4 ٱلۡحَمۡدُ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 8029 ms ayah 1 word 5 لِلَّهِ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 8880 ms ayah 1 word 6 رَبِّ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 9525 ms ayah 1 word 7 ٱلۡعَٰلَمِينَ ٢ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 12689 ms ayah 2 word 8 ٱلرَّحۡمَٰنِ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 13793 ms ayah 2 word 9 ٱلرَّحِيمِ ٣ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 17307 ms ayah 3 word 10 مَٰلِكِ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 18031 ms ayah 3 word 11 يَوۡمِ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 18637 ms ayah 3 word 12 ٱلدِّينِ ٤ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 21957 ms ayah 4 word 13 إِيَّاكَ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 22842 ms ayah 4 word 14 نَعۡبُدُ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 23605 ms ayah 4 word 15 وَإِيَّاكَ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 24731 ms ayah 4 word 16 نَسۡتَعِينُ ٥ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 28646 ms ayah 5 word 17 ٱهۡدِنَا playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 29288 ms ayah 5 word 18 ٱلصِّرَٰطَ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 30212 ms ayah 5 word 19 ٱلۡمُسۡتَقِيمَ ٦ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 34190 ms ayah 6 word 20 صِرَٰطَ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 34922 ms ayah 6 word 21 ٱلَّذِينَ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 35846 ms ayah 6 word 22 أَنۡعَمۡتَ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 36851 ms ayah 6 word 23 عَلَيۡهِمۡ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 37775 ms ayah 6 word 24 غَيۡرِ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 38377 ms ayah 6 word 25 ٱلۡمَغۡضُوبِ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 39542 ms ayah 6 word 26 عَلَيۡهِمۡ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 40546 ms ayah 6 word 27 وَلَا playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 40868 ms ayah 6 word 28 ٱلضَّآلِّينَ ٧ playing true
+11-13 02:38:17.850  5111  5159 I DaabCheck: 

@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="app.daab.habits.AudioPlaybackTest" tests="14" failures="0" errors="0" skipped="0" time="118.003" timestamp="2026-11-13T02:39:25" hostname="localhost">
+  <properties>
+    <property name="device" value="emulator-5554 - 14" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="fatihahFollowsWords" classname="app.daab.habits.AudioPlaybackTest" time="51.63" />
+  <testcase name="adhkar" classname="app.daab.habits.DeviceScreensTest" time="5.752" />
+  <testcase name="detail" classname="app.daab.habits.DeviceScreensTest" time="5.448" />
+  <testcase name="page50" classname="app.daab.habits.DeviceScreensTest" time="5.215" />
+  <testcase name="reader" classname="app.daab.habits.DeviceScreensTest" time="4.382" />
+  <testcase name="quranTab" classname="app.daab.habits.DeviceScreensTest" time="4.197" />
+  <testcase name="reciting" classname="app.daab.habits.DeviceScreensTest" time="6.693" />
+  <testcase name="counters" classname="app.daab.habits.DeviceScreensTest" time="3.932" />
+  <testcase name="edit" classname="app.daab.habits.DeviceScreensTest" time="4.441" />
+  <testcase name="wird" classname="app.daab.habits.DeviceScreensTest" time="4.83" />
+  <testcase name="page1" classname="app.daab.habits.DeviceScreensTest" time="4.604" />
+  <testcase name="page7" classname="app.daab.habits.DeviceScreensTest" time="5.313" />
+  <testcase name="settings" classname="app.daab.habits.DeviceScreensTest" time="4.639" />
+  <testcase name="screens" classname="app.daab.habits.DeviceScreensTest" time="4.111" />
+</testsuite>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="app.daab.habits.ScreensTest" tests="18" skipped="0" failures="0" errors="0" timestamp="2026-11-13T02:34:18" hostname="runnervmwuk1x" time="13.926">
+  <properties/>
+  <testcase name="adhkar" classname="app.daab.habits.ScreensTest" time="6.276"/>
+  <testcase name="detail" classname="app.daab.habits.ScreensTest" time="0.501"/>
+  <testcase name="page76" classname="app.daab.habits.ScreensTest" time="0.995"/>
+  <testcase name="page77" classname="app.daab.habits.ScreensTest" time="0.732"/>
+  <testcase name="reader" classname="app.daab.habits.ScreensTest" time="0.338"/>
+  <testcase name="quranTab" classname="app.daab.habits.ScreensTest" time="0.337"/>
+  <testcase name="page262" classname="app.daab.habits.ScreensTest" time="0.576"/>
+  <testcase name="page604" classname="app.daab.habits.ScreensTest" time="0.376"/>
+  <testcase name="homeDark" classname="app.daab.habits.ScreensTest" time="0.428"/>
+  <testcase name="counters" classname="app.daab.habits.ScreensTest" time="0.277"/>
+  <testcase name="edit" classname="app.daab.habits.ScreensTest" time="0.335"/>
+  <testcase name="home" classname="app.daab.habits.ScreensTest" time="0.355"/>
+  <testcase name="wird" classname="app.daab.habits.ScreensTest" time="0.34"/>
+  <testcase name="page1" classname="app.daab.habits.ScreensTest" time="0.298"/>
+  <testcase name="page2" classname="app.daab.habits.ScreensTest" time="0.404"/>
+  <testcase name="page7" classname="app.daab.habits.ScreensTest" time="0.529"/>
+  <testcase name="page7Dark" classname="app.daab.habits.ScreensTest" time="0.479"/>
+  <testcase name="settings" classname="app.daab.habits.ScreensTest" time="0.346"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

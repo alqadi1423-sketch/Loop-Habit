@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="app.daab.habits.DataTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-13T02:33:52" hostname="runnervmwuk1x" time="26.035">
+  <properties/>
+  <testcase name="mushafPages" classname="app.daab.habits.DataTest" time="20.737"/>
+  <testcase name="reciters" classname="app.daab.habits.DataTest" time="5.298"/>
+  <system-out><![CDATA[mushaf qcf2 ok: 77430 words
+mushaf qcf4 ok: 77430 words
+reciter 7 مشاري العفاسي surah 1: verses 7/7, with words 7, audio 200
+reciter 7 مشاري العفاسي surah 2: verses 286/286, with words 286, audio 200
+reciter 7 مشاري العفاسي surah 114: verses 6/6, with words 6, audio 200
+reciter 6 محمود خليل الحصري surah 1: verses 7/7, with words 7, audio 200
+reciter 6 محمود خليل الحصري surah 2: verses 286/286, with words 286, audio 200
+reciter 6 محمود خليل الحصري surah 114: verses 6/6, with words 6, audio 200
+reciter 12 محمود خليل الحصري، المعلم surah 1: verses 7/7, with words 7, audio 200
+reciter 12 محمود خليل الحصري، المعلم surah 2: verses 286/286, with words 286, audio 200
+reciter 12 محمود خليل الحصري، المعلم surah 114: verses 6/6, with words 6, audio 200
+reciter 2 عبدالباسط عبدالصمد، مرتل surah 1: verses 7/7, with words 7, audio 200
+reciter 2 عبدالباسط عبدالصمد، مرتل surah 2: verses 286/286, with words 286, audio 200
+reciter 2 عبدالباسط عبدالصمد، مرتل surah 114: verses 6/6, with words 6, audio 200
+reciter 1 عبدالباسط عبدالصمد، مجود surah 1: verses 7/7, with words 7, audio 200
+reciter 1 عبدالباسط عبدالصمد، مجود surah 2: verses 286/286, with words 286, audio 200
+reciter 1 عبدالباسط عبدالصمد، مجود surah 114: verses 6/6, with words 6, audio 200
+reciter 9 محمد صديق المنشاوي، مرتل surah 1: verses 7/7, with words 7, audio 200
+reciter 9 محمد صديق المنشاوي، مرتل surah 2: verses 286/286, with words 286, audio 200
+reciter 9 محمد صديق المنشاوي، مرتل surah 114: verses 6/6, with words 6, audio 200
+reciter 3 عبدالرحمن السديس surah 1: verses 7/7, with words 7, audio 200
+reciter 3 عبدالرحمن السديس surah 2: verses 286/286, with words 286, audio 200
+reciter 3 عبدالرحمن السديس surah 114: verses 6/6, with words 6, audio 200
+reciter 10 سعود الشريم surah 1: verses 7/7, with words 7, audio 200
+reciter 10 سعود الشريم surah 2: verses 286/286, with words 286, audio 200
+reciter 10 سعود الشريم surah 114: verses 6/6, with words 6, audio 200
+reciter 4 أبو بكر الشاطري surah 1: verses 7/7, with words 7, audio 200
+reciter 4 أبو بكر الشاطري surah 2: verses 286/286, with words 286, audio 200
+reciter 4 أبو بكر الشاطري surah 114: verses 6/6, with words 6, audio 200
+reciter 5 هاني الرفاعي surah 1: verses 7/7, with words 7, audio 200
+reciter 5 هاني الرفاعي surah 2: verses 286/286, with words 286, audio 200
+reciter 5 هاني الرفاعي surah 114: verses 6/6, with words 6, audio 200
+reciters with problems: []
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
