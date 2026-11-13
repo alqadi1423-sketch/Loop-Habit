@@ -23,8 +23,17 @@ class MushafData(
     /** The ayah position each word belongs to. */
     val ayahOf: IntArray,
     /** The first word of every ayah. */
-    val firstWord: IntArray
+    val firstWord: IntArray,
+    /** For the few ayat Quran.com splits into words differently: its word position to ours. */
+    private val qdc: Map<Int, IntArray> = emptyMap()
 ) {
+    /** Our word for a Quran.com word position (from 1) in an ayah, as the recitation timings count them. */
+    fun wordOf(ayah: Int, position: Int): Int {
+        val count = (if (ayah + 1 < firstWord.size) firstWord[ayah + 1] else words.size) - firstWord[ayah]
+        val i = qdc[ayah]?.getOrNull(position - 1) ?: (position - 1)
+        return firstWord[ayah] + i.coerceIn(0, count - 1)
+    }
+
     private val pageFirst = IntArray(pages.size) { p -> pages[p].first { it.kind == MushafLine.TEXT }.a }
 
     /** Page index (0 based) holding the start of an ayah. */
@@ -102,6 +111,15 @@ object Mushaf {
                 }
             }
         }
-        return MushafData(pages, words.toTypedArray(), ayahOf.toIntArray(), firstWord).also { cache[edition] = it }
+        val qdc = HashMap<Int, IntArray>()
+        r.optJSONObject("qdc")?.let { o ->
+            for (key in o.keys()) {
+                val s = key.substringBefore(':').toInt() - 1
+                val a = key.substringAfter(':').toInt() - 1
+                val arr = o.getJSONArray(key)
+                qdc[q.surahs[s].start + a] = IntArray(arr.length()) { arr.getInt(it) }
+            }
+        }
+        return MushafData(pages, words.toTypedArray(), ayahOf.toIntArray(), firstWord, qdc).also { cache[edition] = it }
     }
 }

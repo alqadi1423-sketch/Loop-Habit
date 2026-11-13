@@ -100,28 +100,25 @@ fun AudioMenu(quran: QuranText, ayah: Int) {
         DropdownMenuItem(text = { Text("القارئ: " + QuranAudio.reciter(ctx).name) }, onClick = { open = false; pick = true })
         DropdownMenuItem(text = { Text("تنزيل سورة ${surah.name}") }, onClick = {
             open = false
-            QuranAudio.downloadAyat(ctx, "سورة ${surah.name}", withBasmala((1..surah.count).map { s + 1 to it }))
+            QuranAudio.downloadSurahs(ctx, "سورة ${surah.name}", listOf(s + 1))
         })
-        DropdownMenuItem(text = { Text("تنزيل الجزء ${juz + 1}") }, onClick = {
+        DropdownMenuItem(text = { Text("تنزيل سور الجزء ${juz + 1}") }, onClick = {
             open = false
             val from = quran.rub[juz * 8]
             val to = if (juz * 8 + 8 < quran.rub.size) quran.rub[juz * 8 + 8] else quran.ayat.size
-            QuranAudio.downloadAyat(ctx, "الجزء ${juz + 1}", withBasmala((from until to).map {
-                val si = quran.surahAt(it)
-                si + 1 to it - quran.surahs[si].start + 1
-            }))
+            QuranAudio.downloadSurahs(ctx, "سور الجزء ${juz + 1}", (quran.surahAt(from)..quran.surahAt(to - 1)).map { it + 1 })
         })
     }
     if (pick) {
-        var chosen by remember { mutableStateOf(QuranAudio.reciter(ctx).folder) }
+        var chosen by remember { mutableStateOf(QuranAudio.reciter(ctx).id) }
         AlertDialog(
             onDismissRequest = { pick = false },
             title = { Text("القارئ") },
             text = {
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                     for (r in QuranAudio.reciters) {
-                        Row(Modifier.fillMaxWidth().clickable { chosen = r.folder }, verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = chosen == r.folder, onClick = { chosen = r.folder })
+                        Row(Modifier.fillMaxWidth().clickable { chosen = r.id }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = chosen == r.id, onClick = { chosen = r.id })
                             Text(r.name)
                         }
                     }
@@ -137,6 +134,3 @@ fun AudioMenu(quran: QuranText, ayah: Int) {
         )
     }
 }
-
-/** The basmala file is played before every surah, so it is downloaded with them. */
-private fun withBasmala(list: List<Pair<Int, Int>>) = listOf(1 to 1) + list

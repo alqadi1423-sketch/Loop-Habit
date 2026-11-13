@@ -70,6 +70,7 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
     val pager = rememberPagerState(initialPage = (data.pageOf(reached.coerceAtMost(range.end - 1)) - firstPage).coerceIn(0, count - 1)) { count }
     val size = (range.end - range.start).coerceAtLeast(1)
     val current by QuranAudio.current.collectAsState()
+    val word by QuranAudio.word.collectAsState()
     LaunchedEffect(current) {
         if (current in range.start until range.end) {
             val p = data.pageOf(current) - firstPage
@@ -151,7 +152,7 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         containerColor = mushafPaper()
     ) { pad ->
         HorizontalPager(state = pager, beyondViewportPageCount = 1, modifier = Modifier.padding(pad).fillMaxSize()) { i ->
-            MushafPage(data, quran, firstPage + i, Modifier.fillMaxSize(), keep = range.start until range.end, highlight = current)
+            MushafPage(data, quran, firstPage + i, Modifier.fillMaxSize(), keep = range.start until range.end, highlight = current, word = word)
         }
     }
 }

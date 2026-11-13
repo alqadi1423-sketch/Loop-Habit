@@ -227,14 +227,14 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
             }
 
             Panel(padding = 14.dp, modifier = Modifier.padding(top = 8.dp)) {
-                var reciter by remember { mutableStateOf(QuranAudio.reciter(ctx).folder) }
+                var reciter by remember { mutableStateOf(QuranAudio.reciter(ctx).id) }
                 var bytes by remember { mutableStateOf(QuranAudio.downloadedBytes(ctx)) }
                 Text("القارئ", style = MaterialTheme.typography.bodyLarge)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (r in QuranAudio.reciters) {
-                        FilterChip(selected = reciter == r.folder, onClick = {
-                            QuranAudio.setReciter(ctx, r.folder)
-                            reciter = r.folder
+                        FilterChip(selected = reciter == r.id, onClick = {
+                            QuranAudio.setReciter(ctx, r.id)
+                            reciter = r.id
                         }, label = { Text(r.name) })
                     }
                 }

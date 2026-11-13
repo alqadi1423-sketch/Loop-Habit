@@ -68,6 +68,7 @@ fun MushafScreen(ayah: Int, page: Int, back: () -> Unit) {
     LaunchedEffect(pager.currentPage) { prefs.edit().putInt("mushaf_page", pager.currentPage).apply() }
     val first = data.firstAyah(pager.currentPage)
     val current by QuranAudio.current.collectAsState()
+    val word by QuranAudio.word.collectAsState()
     // The page follows the recitation.
     LaunchedEffect(current) {
         if (current >= 0) {
@@ -98,7 +99,7 @@ fun MushafScreen(ayah: Int, page: Int, back: () -> Unit) {
         containerColor = mushafPaper()
     ) { pad ->
         HorizontalPager(state = pager, beyondViewportPageCount = 1, modifier = Modifier.padding(pad).fillMaxSize()) { p ->
-            MushafPage(data, quran, p, Modifier.fillMaxSize(), highlight = current)
+            MushafPage(data, quran, p, Modifier.fillMaxSize(), highlight = current, word = word)
         }
     }
 }
