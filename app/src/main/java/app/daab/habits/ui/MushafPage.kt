@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -69,8 +71,11 @@ fun MushafPage(data: MushafData, quran: QuranText, page: Int, modifier: Modifier
             Text("سورة $surah", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = muted)
             Text("الجزء " + ordinalsShort[juz.coerceIn(0, 29)], style = MaterialTheme.typography.labelMedium, color = muted)
         }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val widthPx = constraints.maxWidth.toFloat()
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            val short = page < 2
+            // The two opening pages are set in a narrower block in the middle of the page, as in print.
+            val blockWidth = if (short) maxWidth * 0.74f else maxWidth
+            val widthPx = with(density) { blockWidth.toPx() }
             val lineH = maxHeight / 15
             // One size for the page: the longest full line just fits the width, and no line is taller than its slot.
             val base = 20f
@@ -89,9 +94,7 @@ fun MushafPage(data: MushafData, quran: QuranText, page: Int, modifier: Modifier
             val byHeight = with(density) { (lineH * 0.46f).toSp().value }
             val size = minOf(byWidth, byHeight)
             val style = TextStyle(fontFamily = font, fontSize = size.sp, color = ink, lineHeight = (size * 1.6f).sp)
-            val short = page < 2
-
-            Column(Modifier.fillMaxSize(), verticalArrangement = if (short) Arrangement.Center else Arrangement.Top) {
+            Column(Modifier.width(blockWidth).fillMaxHeight(), verticalArrangement = if (short) Arrangement.Center else Arrangement.Top) {
                 lines.forEachIndexed { i, l ->
                     when (l.kind) {
                         MushafLine.HEADER -> Box(Modifier.fillMaxWidth().height(lineH), contentAlignment = Alignment.Center) {
@@ -116,7 +119,7 @@ fun MushafPage(data: MushafData, quran: QuranText, page: Int, modifier: Modifier
                             // Every line reaches both edges, as in print: the letters are widened or
                             // pressed a little and the rest goes between the words. Only the opening
                             // pages and a lone short line stay centred.
-                            val stretch = !short && (l.b > l.a) && w >= widthPx * 0.45f
+                            val stretch = (l.b > l.a) && w >= widthPx * 0.45f
                             val squeeze = if (stretch) (widthPx / w).coerceIn(0.85f, 1.08f) else 1f
                             val rowWidth = with(density) { (widthPx / squeeze).toDp() }
                             Box(Modifier.fillMaxWidth().height(lineH), contentAlignment = Alignment.Center) {

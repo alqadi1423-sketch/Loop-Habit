@@ -46,3 +46,51 @@ jobs:
         run: |
           cp app/build/outputs/apk/release/app-release.apk daab.apk
           gh release create "v0.1.${{ github.run_number }}" daab.apk --title "دأب 0.1.${{ github.run_number }}" --notes "${{ github.event.head_commit.message }}" --latest
+
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.11.1
+      - name: Screens and data
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          gradle :app:testDebugUnitTest --no-daemon 2>&1 | tee unit.log
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Playback on an emulator
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            gradle :app:connectedDebugAndroidTest --no-daemon > device.log 2>&1 || true
+            adb pull /sdcard/Android/data/app.daab.habits/files/audio_check.txt audio_check.txt || true
+            adb logcat -d -s AndroidRuntime:E MediaPlayer:* MediaPlayerNative:* QuranAudio:* > logcat.txt || true
+      - name: Publish results
+        if: always()
+        run: |
+          mkdir -p /tmp/out/shots
+          cp -r app/build/shots/* /tmp/out/shots/ 2>/dev/null || true
+          tail -n 300 unit.log > /tmp/out/unit.log 2>/dev/null || true
+          tail -n 300 device.log > /tmp/out/device.log 2>/dev/null || true
+          cp audio_check.txt logcat.txt /tmp/out/ 2>/dev/null || true
+          find app/build/test-results -name "*.xml" -exec cp {} /tmp/out/ \; 2>/dev/null || true
+          find app/build/outputs/androidTest-results -name "*.xml" -exec cp {} /tmp/out/ \; 2>/dev/null || true
+          cd /tmp/out && git init -q -b checks
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git add -A && git commit -q -m "checks ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" checks

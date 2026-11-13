@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -127,9 +128,9 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
         },
         bottomBar = {
           Column {
-            AudioBar(quran, { data.firstAyah(firstPage + pager.currentPage).coerceIn(range.start, range.end - 1) }, range.end)
+            AudioBar(quran, { data.firstAyah(firstPage + pager.currentPage).coerceIn(range.start, range.end - 1) }, range.end, bottom = false)
             Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LinearProgressIndicator(progress = { share }, color = color, modifier = Modifier.weight(1f))
                         Text(

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -40,7 +41,7 @@ import app.daab.habits.data.QuranText
 
 /** The recitation controls under a mushaf page, and download progress when one runs. */
 @Composable
-fun AudioBar(quran: QuranText, startAt: () -> Int, end: Int) {
+fun AudioBar(quran: QuranText, startAt: () -> Int, end: Int, bottom: Boolean = true) {
     val ctx = LocalContext.current
     val current by QuranAudio.current.collectAsState()
     val playing by QuranAudio.playing.collectAsState()
@@ -54,7 +55,7 @@ fun AudioBar(quran: QuranText, startAt: () -> Int, end: Int) {
         }
     }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().then(if (bottom) Modifier.navigationBarsPadding() else Modifier)) {
             download?.let { d ->
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
