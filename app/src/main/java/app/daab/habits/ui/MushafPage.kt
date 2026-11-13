@@ -52,7 +52,7 @@ fun mushafPaper(): Color = if (isDark()) Color(0xFF1B2A2E) else Color(0xFFFCF9F1
  * as in print; short ones are centred. Words outside [keep] are faded, for a daily portion.
  */
 @Composable
-fun MushafPage(data: MushafData, quran: QuranText, page: Int, modifier: Modifier = Modifier, keep: IntRange? = null) {
+fun MushafPage(data: MushafData, quran: QuranText, page: Int, modifier: Modifier = Modifier, keep: IntRange? = null, highlight: Int = -1) {
     val font = remember { FontFamily(Font(R.font.uthmanic_hafs)) }
     val ink = MaterialTheme.colorScheme.onSurface
     val accent = MaterialTheme.colorScheme.primary
@@ -129,6 +129,7 @@ fun MushafPage(data: MushafData, quran: QuranText, page: Int, modifier: Modifier
                                     val faded = keep != null && data.ayahOf[w] !in keep
                                     Text(
                                         data.words[w],
+                                        modifier = if (data.ayahOf[w] == highlight) Modifier.background(accent.copy(alpha = 0.16f), RoundedCornerShape(6.dp)) else Modifier,
                                         style = if (faded) style.copy(color = ink.copy(alpha = 0.28f)) else style,
                                         softWrap = false, maxLines = 1
                                     )

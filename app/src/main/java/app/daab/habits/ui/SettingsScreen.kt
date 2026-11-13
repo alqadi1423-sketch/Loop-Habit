@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.daab.habits.data.Db
 import app.daab.habits.data.Mushaf
+import app.daab.habits.audio.QuranAudio
 import app.daab.habits.data.LoopImport
 import java.io.File
 import app.daab.habits.data.prayerNames
@@ -222,6 +223,32 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
                             edition = value
                         }, label = { Text(label) })
                     }
+                }
+            }
+
+            Panel(padding = 14.dp, modifier = Modifier.padding(top = 8.dp)) {
+                var reciter by remember { mutableStateOf(QuranAudio.reciter(ctx).folder) }
+                var bytes by remember { mutableStateOf(QuranAudio.downloadedBytes(ctx)) }
+                Text("القارئ", style = MaterialTheme.typography.bodyLarge)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (r in QuranAudio.reciters) {
+                        FilterChip(selected = reciter == r.folder, onClick = {
+                            QuranAudio.setReciter(ctx, r.folder)
+                            reciter = r.folder
+                        }, label = { Text(r.name) })
+                    }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "التلاوات المنزّلة: " + "%.1f".format(bytes / 1048576.0) + " ميجا",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (bytes > 0) TextButton(onClick = {
+                        QuranAudio.deleteDownloads(ctx)
+                        bytes = 0
+                    }) { Text("حذفها") }
                 }
             }
 

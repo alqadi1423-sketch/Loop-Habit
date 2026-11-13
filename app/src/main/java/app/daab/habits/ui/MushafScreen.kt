@@ -33,6 +33,8 @@ import app.daab.habits.data.MushafData
 import app.daab.habits.data.Quran
 import app.daab.habits.data.QuranText
 import kotlinx.coroutines.Dispatchers
+import app.daab.habits.audio.QuranAudio
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.withContext
 
 /** The mushaf data, loaded away from the main thread; null until ready. */
@@ -65,6 +67,14 @@ fun MushafScreen(ayah: Int, page: Int, back: () -> Unit) {
     val pager = rememberPagerState(initialPage = start) { Mushaf.PAGES }
     LaunchedEffect(pager.currentPage) { prefs.edit().putInt("mushaf_page", pager.currentPage).apply() }
     val first = data.firstAyah(pager.currentPage)
+    val current by QuranAudio.current.collectAsState()
+    // The page follows the recitation.
+    LaunchedEffect(current) {
+        if (current >= 0) {
+            val p = data.pageOf(current)
+            if (p != pager.currentPage) pager.animateScrollToPage(p)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -80,13 +90,15 @@ fun MushafScreen(ayah: Int, page: Int, back: () -> Unit) {
                     }
                 },
                 navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") } },
+                actions = { AudioMenu(quran, first) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = mushafPaper())
             )
         },
+        bottomBar = { AudioBar(quran, { data.firstAyah(pager.currentPage) }, Quran.TOTAL) },
         containerColor = mushafPaper()
     ) { pad ->
         HorizontalPager(state = pager, beyondViewportPageCount = 1, modifier = Modifier.padding(pad).fillMaxSize()) { p ->
-            MushafPage(data, quran, p, Modifier.fillMaxSize())
+            MushafPage(data, quran, p, Modifier.fillMaxSize(), highlight = current)
         }
     }
 }

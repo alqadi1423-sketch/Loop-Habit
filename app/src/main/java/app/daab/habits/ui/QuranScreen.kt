@@ -41,6 +41,8 @@ import app.daab.habits.data.Mark
 import app.daab.habits.data.Quran
 import app.daab.habits.logic.Schedule
 import kotlin.math.roundToInt
+import app.daab.habits.audio.QuranAudio
+import androidx.compose.runtime.collectAsState
 
 /** Today's Quran portion of a habit, on the mushaf pages that hold it. Progress follows the page reached. */
 @Composable
@@ -67,6 +69,13 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
     val count = lastPage - firstPage + 1
     val pager = rememberPagerState(initialPage = (data.pageOf(reached.coerceAtMost(range.end - 1)) - firstPage).coerceIn(0, count - 1)) { count }
     val size = (range.end - range.start).coerceAtLeast(1)
+    val current by QuranAudio.current.collectAsState()
+    LaunchedEffect(current) {
+        if (current in range.start until range.end) {
+            val p = data.pageOf(current) - firstPage
+            if (p != pager.currentPage && p in 0 until count) pager.animateScrollToPage(p)
+        }
+    }
 
     LaunchedEffect(pager.currentPage) {
         // Reaching a page counts what came before it as read.
@@ -111,10 +120,13 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
                     }
                 },
                 navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") } },
+                actions = { AudioMenu(quran, range.start) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = mushafPaper())
             )
         },
         bottomBar = {
+          Column {
+            AudioBar(quran, { data.firstAyah(firstPage + pager.currentPage).coerceIn(range.start, range.end - 1) }, range.end)
             Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -134,11 +146,12 @@ fun QuranScreen(db: Db, habitId: Long, changed: () -> Unit, back: () -> Unit) {
                     }
                 }
             }
+          }
         },
         containerColor = mushafPaper()
     ) { pad ->
         HorizontalPager(state = pager, beyondViewportPageCount = 1, modifier = Modifier.padding(pad).fillMaxSize()) { i ->
-            MushafPage(data, quran, firstPage + i, Modifier.fillMaxSize(), keep = range.start until range.end)
+            MushafPage(data, quran, firstPage + i, Modifier.fillMaxSize(), keep = range.start until range.end, highlight = current)
         }
     }
 }

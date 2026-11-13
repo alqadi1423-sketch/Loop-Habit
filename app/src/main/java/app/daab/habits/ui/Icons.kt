@@ -49,3 +49,22 @@ val BarsIcon: ImageVector = stroked("bars") {
     moveTo(19f, 20f)
     verticalLineTo(14f)
 }
+
+/** Two upright bars, for pausing recitation. */
+val PauseIcon: ImageVector = stroked("pause") {
+    moveTo(9f, 6f)
+    verticalLineTo(18f)
+    moveTo(15f, 6f)
+    verticalLineTo(18f)
+}
+
+/** An arrow into a tray, for downloading. */
+val DownloadIcon: ImageVector = stroked("download") {
+    moveTo(12f, 4f)
+    verticalLineTo(15f)
+    moveTo(7.5f, 10.5f)
+    lineTo(12f, 15f)
+    lineTo(16.5f, 10.5f)
+    moveTo(5f, 19f)
+    horizontalLineTo(19f)
+}
