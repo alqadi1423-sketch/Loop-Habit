@@ -78,6 +78,7 @@ jobs:
           disable-animations: true
           profile: pixel_6
           script: |
+            adb shell settings put global hide_error_dialogs 1
             gradle :app:connectedDebugAndroidTest --no-daemon > device.log 2>&1 || true
             mkdir -p device-shots && for f in $(adb shell ls /data/local/tmp/ | tr -d '\r' | grep png); do adb pull /data/local/tmp/$f device-shots/$f; done || true
             adb logcat -d -s AndroidRuntime:E DaabCheck:I > logcat.txt || true

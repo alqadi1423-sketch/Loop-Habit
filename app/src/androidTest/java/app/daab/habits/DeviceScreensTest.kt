@@ -53,6 +53,8 @@ class DeviceScreensTest {
         before()
         Thread.sleep(1500)
         rule.waitForIdle()
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS").close()
+        Thread.sleep(300)
         val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("screencap -p /data/local/tmp/$name.png")
         android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).use { it.readBytes() }
     }
@@ -64,6 +66,16 @@ class DeviceScreensTest {
     @Test fun detail() {
         val id = db.habits().first { it.contentRef == Quran.CONTENT }.id
         shot("d2-detail", null, { DetailScreen(db, id, 0, {}, {}) })
+    }
+
+    @Test fun quranTab() = shot("d8-quran-tab", null, { app.daab.habits.ui.QuranTab(db, 0) {} })
+    @Test fun adhkar() = shot("d9-adhkar", null, { app.daab.habits.ui.AdhkarScreen(db, 0) {} })
+    @Test fun settings() = shot("e1-settings", null, { app.daab.habits.ui.SettingsScreen(db, {}, {}) })
+    @Test fun edit() = shot("e2-edit", null, { app.daab.habits.ui.EditScreen(db, 0, false, {}, {}) })
+    @Test fun counters() = shot("e3-counters", null, { app.daab.habits.ui.CountersScreen(db, 0, {}, {}) })
+    @Test fun reader() {
+        val id = db.habits().first { it.contentRef > 0 }.id
+        shot("e4-reader", null, { app.daab.habits.ui.ReaderScreen(db, id, {}, {}) })
     }
 
     @Test fun page1() = shot("d3-page-001", "الجزء", { MushafScreen(0, 0) {} })
