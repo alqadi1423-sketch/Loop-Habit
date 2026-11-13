@@ -74,8 +74,8 @@ private fun Heading(text: String, color: Color) {
 @Composable
 private fun Stat(value: String, label: String, color: Color, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleLarge, color = color)
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("\u200E" + value, style = MaterialTheme.typography.titleMedium, color = color, maxLines = 1, softWrap = false)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
 }
 

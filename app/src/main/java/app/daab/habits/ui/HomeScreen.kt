@@ -68,7 +68,10 @@ import app.daab.habits.logic.Settings
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 
-private const val DAYS = 4
+/** As many past days as fit beside a readable habit name: four on most phones, fewer on small ones. */
+private val days: Int
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = ((androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 216) / 46).coerceIn(2, 7)
 private val CELL = 46.dp
 
 /** All habits as a table: one row each, with a mark for today and the days before it. */
@@ -191,7 +194,7 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
             } else {
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.weight(1f))
-                    for (i in 0 until DAYS) {
+                    for (i in 0 until days) {
                         val d = today - i
                         Column(Modifier.width(CELL), horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
@@ -354,11 +357,12 @@ private fun HabitLine(
                         else -> "فائتة"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (phase == Phase.CLOSED) MaterialTheme.colorScheme.error else muted
+                    color = if (phase == Phase.CLOSED) MaterialTheme.colorScheme.error else muted,
+                    maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis
                 )
             }
         }
-        for (i in 0 until DAYS) {
+        for (i in 0 until days) {
             val d = today - i
             val value = s.entries[d] ?: Mark.NONE
             val partial = s.partials[d] ?: 0

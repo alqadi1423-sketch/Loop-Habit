@@ -76,6 +76,7 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
+          profile: pixel_6
           script: |
             gradle :app:connectedDebugAndroidTest --no-daemon > device.log 2>&1 || true
             mkdir -p device-shots && for f in $(adb shell ls /data/local/tmp/ | tr -d '\r' | grep png); do adb pull /data/local/tmp/$f device-shots/$f; done || true
