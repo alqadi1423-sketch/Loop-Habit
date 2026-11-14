@@ -236,7 +236,7 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
                     }
                 }
                 Divider()
-                SettingRow("المكان", city, "تُحسب المواقيت داخل الجوال بلا إنترنت. اضغط وقت أي صلاة لتقديمه أو تأخيره دقائق") { pickCity = true }
+                SettingRow("المكان", city, "اضغط وقت أي صلاة لتعديله بالدقائق") { pickCity = true }
                 Divider()
                 SettingRow("طريقة الحساب", PrayerTimes.methods[PrayerTimes.method(ctx)].name, "أم القرى للسعودية، وغيرها لبلدان أخرى") { pickMethod = true }
                 Divider()
