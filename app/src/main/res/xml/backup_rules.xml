@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older. Recitations can be downloaded again, and they would push the
+     backup past its 25 MB limit, which stops the habits from being backed up at all. -->
+<full-backup-content>
+    <exclude domain="file" path="audio/" />
+    <exclude domain="file" path="backups/" />
+    <exclude domain="cache" path="." />
+</full-backup-content>

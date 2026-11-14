@@ -56,6 +56,9 @@ object Quran {
     @Volatile
     private var cache: QuranText? = null
 
+    /** The text if it was already read, without reading it. */
+    fun cached(): QuranText? = cache
+
     fun text(ctx: Context): QuranText {
         cache?.let { return it }
         val raw = ctx.applicationContext.assets.open("quran.json").use { it.readBytes().toString(Charsets.UTF_8) }

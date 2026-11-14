@@ -64,7 +64,13 @@ private val ordinals = listOf(
 @Composable
 fun QuranTab(db: Db, version: Int, go: (Screen) -> Unit) {
     val ctx = LocalContext.current
-    val quran = remember { Quran.text(ctx) }
+    val quran = rememberQuranText()
+    if (quran == null) {
+        Scaffold(topBar = { TopAppBar(title = { Text("القرآن") }) }, bottomBar = { BottomNav(Screen.QuranTab, go) }) { pad ->
+            Loading(Modifier.padding(pad).fillMaxSize())
+        }
+        return
+    }
     val wird = remember(version) { db.habits().firstOrNull { it.contentRef == Quran.CONTENT } }
     val prefs = remember { ctx.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     val last = remember(version) { prefs.getInt("mushaf_page", -1) }

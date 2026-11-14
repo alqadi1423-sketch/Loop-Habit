@@ -74,6 +74,8 @@ private val days: Int
     get() = ((androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 216) / 46).coerceIn(2, 7)
 private val CELL = 46.dp
 
+private var askedNotify = false
+
 /** All habits as a table: one row each, with a mark for today and the days before it. */
 @Composable
 fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) {
@@ -87,10 +89,10 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
     }
     val today = remember(version, minute) { Schedule.today() }
     val now = Schedule.nowMinutes()
-    val all = remember(version, minute) { loadStates(db) }
+    val all = rememberLoaded(version, minute) { loadStates(db) }
     val groups = remember(version) { db.groups() }
     val counters = remember(version) { db.counters() }
-    val counterTotals = remember(version) {
+    val counterTotals = rememberLoaded(version) {
         val linked = db.habits(true).filter { it.counterId != 0L }
         counters.associate { c -> c.id to linked.filter { it.counterId == c.id }.sumOf { db.doneCount(it.id) * it.counterEffect } }
     }
@@ -102,7 +104,9 @@ fun HomeScreen(db: Db, version: Int, changed: () -> Unit, go: (Screen) -> Unit) 
     LaunchedEffect(version) {
         val reminds = all.any { it.habit.reminder >= 0 || it.habit.remindStart || it.habit.remindEnd > 0 }
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (reminds && Build.VERSION.SDK_INT >= 33 && !nm.areNotificationsEnabled()) {
+        // Asked at most once each time the app is opened, not after every change.
+        if (reminds && !askedNotify && Build.VERSION.SDK_INT >= 33 && !nm.areNotificationsEnabled()) {
+            askedNotify = true
             askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
@@ -370,8 +374,8 @@ private fun HabitLine(
                 (if (d == today) Schedule.isDue(h, s.dates, s.entries, d) else Schedule.isScheduled(h, s.dates, d))
             val reading = h.contentRef != 0
             Box(
+                // Days before the habit began can be marked too; marking one moves its beginning back.
                 Modifier.size(CELL).combinedClickable(
-                    enabled = d >= h.created,
                     onClick = {
                         if (d == today && reading) go(Screen.Reader(h.id))
                         else if (d == today && h.target > 0) {

@@ -62,7 +62,11 @@ object QuranAudio {
     private fun timingFile(ctx: Context, r: Reciter, surah: Int) = File(dir(ctx, r), "$surah.json")
     private fun audioFile(ctx: Context, r: Reciter, surah: Int) = File(dir(ctx, r), "$surah.mp3")
 
-    private fun fetch(url: String, to: File) {
+    /**
+     * Downloads [url] into [to]. The file only takes its name once [valid] accepts it, so a page
+     * from a network that asks to sign in first, or a cut connection, never passes for the real file.
+     */
+    private fun fetch(url: String, to: File, valid: (File) -> Boolean) {
         to.parentFile?.mkdirs()
         val tmp = File(to.path + ".part")
         val c = URL(url).openConnection() as HttpURLConnection
@@ -71,19 +75,55 @@ object QuranAudio {
         try {
             if (c.responseCode != 200) throw IllegalStateException("http ${c.responseCode}")
             c.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            if (!valid(tmp)) throw IllegalStateException("not the expected file")
+            if (!tmp.renameTo(to)) throw IllegalStateException("rename")
         } finally {
             c.disconnect()
+            tmp.delete()
         }
-        if (!tmp.renameTo(to)) throw IllegalStateException("rename")
+    }
+
+    private fun timingUrl(r: Reciter, surah: Int) = "https://api.quran.com/api/v4/chapter_recitations/${r.id}/$surah?segments=true"
+
+    private fun parseTiming(f: File): JSONObject = JSONObject(f.readText()).getJSONObject("audio_file").also {
+        it.getString("audio_url")
+        it.getJSONArray("timestamps")
+    }
+
+    private fun isTiming(f: File): Boolean = try {
+        parseTiming(f)
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    /** An MP3 starts with its tag or with a frame header; a web page does not. */
+    private fun isAudio(f: File): Boolean {
+        if (f.length() < 16 * 1024) return false
+        val head = ByteArray(3)
+        f.inputStream().use { if (it.read(head) < 3) return false }
+        val id3 = head[0] == 'I'.code.toByte() && head[1] == 'D'.code.toByte() && head[2] == '3'.code.toByte()
+        val frame = head[0] == 0xFF.toByte() && (head[1].toInt() and 0xE0) == 0xE0
+        return id3 || frame
+    }
+
+    /** The timings file of a surah, fetched again if it is missing or damaged. */
+    private fun timingJson(ctx: Context, r: Reciter, surah: Int): JSONObject {
+        val f = timingFile(ctx, r, surah)
+        if (f.exists() && f.length() > 0) {
+            try {
+                return parseTiming(f)
+            } catch (e: Exception) {
+                f.delete()
+            }
+        }
+        fetch(timingUrl(r, surah), f, ::isTiming)
+        return parseTiming(f)
     }
 
     /** The timings of a surah (numbered from 1), kept on the phone after the first time. Network: call off the main thread. */
     fun timing(ctx: Context, r: Reciter, surah: Int, firstAyah: Int): SurahTiming {
-        val f = timingFile(ctx, r, surah)
-        if (!(f.exists() && f.length() > 0)) {
-            fetch("https://api.quran.com/api/v4/chapter_recitations/${r.id}/$surah?segments=true", f)
-        }
-        val a = JSONObject(f.readText()).getJSONObject("audio_file")
+        val a = timingJson(ctx, r, surah)
         val ts = a.getJSONArray("timestamps")
         val verses = ArrayList<VerseTiming>()
         for (i in 0 until ts.length()) {
@@ -103,6 +143,11 @@ object QuranAudio {
         return SurahTiming(src, verses)
     }
 
+    /** Removes pieces left by downloads that were cut off. */
+    fun cleanPartial(ctx: Context) {
+        File(ctx.filesDir, "audio").walkTopDown().filter { it.isFile && it.name.endsWith(".part") }.forEach { it.delete() }
+    }
+
     fun downloadedBytes(ctx: Context): Long =
         File(ctx.filesDir, "audio").walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
@@ -114,35 +159,38 @@ object QuranAudio {
         cancelDownload = true
     }
 
-    /** Downloads whole surahs (numbered from 1) with their timings for the chosen reciter, in the background. */
+    /**
+     * Downloads whole surahs (numbered from 1) with their timings for the chosen reciter. It runs in
+     * a service with its own notification, so it carries on when the app is left.
+     */
     fun downloadSurahs(ctx: Context, title: String, surahs: List<Int>) {
         if (download.value != null) return
-        val app = ctx.applicationContext
-        val r = reciter(app)
         cancelDownload = false
         download.value = DownloadState(title, 0, surahs.size, 0)
-        Thread {
-            var failed = 0
-            for ((i, s) in surahs.withIndex()) {
-                if (cancelDownload) break
-                try {
-                    val tf = timingFile(app, r, s)
-                    if (!(tf.exists() && tf.length() > 0)) {
-                        fetch("https://api.quran.com/api/v4/chapter_recitations/${r.id}/$s?segments=true", tf)
-                    }
-                    val af = audioFile(app, r, s)
-                    if (!(af.exists() && af.length() > 0)) {
-                        val url = JSONObject(tf.readText()).getJSONObject("audio_file").getString("audio_url")
-                        fetch(url, af)
-                    }
-                } catch (e: Exception) {
-                    failed++
-                }
-                download.value = DownloadState(title, i + 1, surahs.size, failed)
+        DownloadService.start(ctx, title, surahs)
+    }
+
+    /** The download itself, run by [DownloadService] off the main thread. */
+    internal fun runDownload(ctx: Context, title: String, surahs: List<Int>, progress: (DownloadState) -> Unit) {
+        val app = ctx.applicationContext
+        val r = reciter(app)
+        var failed = 0
+        for ((i, s) in surahs.withIndex()) {
+            if (cancelDownload) break
+            try {
+                val url = timingJson(app, r, s).getString("audio_url")
+                val af = audioFile(app, r, s)
+                if (af.exists() && !isAudio(af)) af.delete()
+                if (!af.exists()) fetch(url, af, ::isAudio)
+            } catch (e: Exception) {
+                failed++
             }
-            val last = download.value
-            download.value = null
-            lastResult.value = last
-        }.start()
+            val state = DownloadState(title, i + 1, surahs.size, failed)
+            download.value = state
+            progress(state)
+        }
+        val last = download.value
+        download.value = null
+        lastResult.value = last
     }
 }

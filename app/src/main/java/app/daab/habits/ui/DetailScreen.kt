@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package app.daab.habits.ui
 
@@ -6,6 +6,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,6 +98,8 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
     val dates = remember(id, version) { db.dates(id) }
     val entries = remember(id, version) { db.entries(id) }
     val partials = remember(id, version) { db.partials(id) }
+    val notes = remember(id, version) { db.notes(id) }
+    var noteDay by remember { mutableStateOf<Long?>(null) }
     val today = Schedule.today()
     val tint = habitTint(habit.color)
     val solid = Color(habit.color)
@@ -272,28 +279,39 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
                                 else -> base
                             }
                             Box(
-                                look.clickable(enabled = editable) {
-                                    val next = when (value) {
-                                        Mark.NONE -> Mark.DONE
-                                        Mark.DONE -> Mark.EXCUSED
-                                        else -> Mark.NONE
-                                    }
-                                    db.setMark(id, day, next)
-                                    changed()
-                                },
+                                look.combinedClickable(
+                                    enabled = editable,
+                                    onClick = {
+                                        val next = when (value) {
+                                            Mark.NONE -> Mark.DONE
+                                            Mark.DONE -> Mark.EXCUSED
+                                            else -> Mark.NONE
+                                        }
+                                        db.setMark(id, day, next)
+                                        changed()
+                                    },
+                                    onLongClick = { noteDay = day }
+                                ),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (inMonth) {
+                                    val ink = when {
+                                        value == Mark.DONE -> Color.White
+                                        day == today -> tint
+                                        day > today -> muted
+                                        else -> MaterialTheme.colorScheme.onSurface
+                                    }
                                     Text(
                                         if (value == Mark.EXCUSED) "عذر" else LocalDate.ofEpochDay(day).dayOfMonth.toString(),
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = when {
-                                            value == Mark.DONE -> Color.White
-                                            day == today -> tint
-                                            day > today -> muted
-                                            else -> MaterialTheme.colorScheme.onSurface
-                                        }
+                                        color = ink
                                     )
+                                    if (notes.containsKey(day)) {
+                                        Box(
+                                            Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp).size(4.dp)
+                                                .clip(CircleShape).background(if (value == Mark.DONE) Color.White else tint)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -301,9 +319,24 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
                     week += 7
                 }
                 Text(
-                    "اضغط اليوم لتغييره: منجز، ثم معذور، ثم فارغ. اليوم المعذور لا يضر القوة.",
+                    "اضغط اليوم لتغييره: منجز، ثم معذور، ثم فارغ. اليوم المعذور لا يضر القوة. واضغط مطولًا لتكتب ملاحظة عن اليوم.",
                     style = MaterialTheme.typography.bodySmall, color = muted, modifier = Modifier.padding(top = 8.dp)
                 )
+            }
+
+            if (notes.isNotEmpty()) {
+                Panel {
+                    Heading("الملاحظات", tint)
+                    for ((day, text) in notes.toSortedMap(compareByDescending { it }).entries.take(8)) {
+                        Column(Modifier.fillMaxWidth().clickable { noteDay = day }.padding(vertical = 6.dp)) {
+                            Text(
+                                app.daab.habits.logic.Hijri.text(day) + "  ·  " + LocalDate.ofEpochDay(day),
+                                style = MaterialTheme.typography.labelSmall, color = muted
+                            )
+                            Text(text, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
             }
 
             if (habit.kind != Kind.PER_WEEK && streaks.isNotEmpty()) {
@@ -353,4 +386,59 @@ fun DetailScreen(db: Db, id: Long, version: Int, changed: () -> Unit, go: (Scree
             Spacer(Modifier.height(16.dp))
         }
     }
+
+    noteDay?.let { d ->
+        DayDialog(db, id, d, entries[d] ?: Mark.NONE, notes[d] ?: "", tint, changed) { noteDay = null }
+    }
+}
+
+/** One day of a habit: its mark and a note about it. */
+@Composable
+internal fun DayDialog(
+    db: Db, habitId: Long, day: Long, value: Int, note: String, tint: Color,
+    changed: () -> Unit, close: () -> Unit
+) {
+    var text by remember(day) { mutableStateOf(note) }
+    var mark by remember(day) { mutableIntStateOf(value) }
+    AlertDialog(
+        onDismissRequest = close,
+        title = {
+            Column {
+                Text(app.daab.habits.logic.Hijri.text(day))
+                Text(
+                    "\u200E" + LocalDate.ofEpochDay(day).toString(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for ((m, label) in listOf(Mark.DONE to "منجز", Mark.EXCUSED to "معذور", Mark.NONE to "فارغ")) {
+                        FilterChip(selected = mark == m, onClick = { mark = m }, label = { Text(label) })
+                    }
+                }
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(500) },
+                    label = { Text("ملاحظة") },
+                    placeholder = { Text("ما الذي أعانك أو شغلك هذا اليوم؟") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                db.tx {
+                    if (mark != value) db.setMark(habitId, day, mark)
+                    db.setNote(habitId, day, text)
+                }
+                changed()
+                close()
+            }) { Text("حفظ", color = tint) }
+        },
+        dismissButton = { TextButton(onClick = close) { Text("إلغاء") } }
+    )
 }

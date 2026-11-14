@@ -5,26 +5,37 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.media.MediaMetadata
 import android.media.MediaPlayer
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import androidx.core.app.NotificationCompat
 import app.daab.habits.R
 import app.daab.habits.data.Mushaf
 import app.daab.habits.data.MushafData
 import app.daab.habits.data.Quran
+import app.daab.habits.data.QuranText
 import app.daab.habits.ui.MainActivity
+import java.io.File
 
 /**
  * Plays the recitation from one ayah up to another, surah after surah, and keeps the ayah and
- * the word being recited up to date from the recording's timings. Keeps playing with the screen off.
+ * the word being recited up to date from the recording's timings. Keeps playing with the screen off,
+ * gives way to calls and other sounds, stops when headphones are pulled out, and answers the
+ * lock screen and headset buttons.
  */
 class QuranAudioService : Service() {
 
@@ -32,10 +43,68 @@ class QuranAudioService : Service() {
     private var player: MediaPlayer? = null
     private var timing: SurahTiming? = null
     private var mushaf: MushafData? = null
+    private var quran: QuranText? = null
     private var to = Quran.TOTAL
     private var surah = 0
     private var failed = false
     private var session = 0
+
+    /** A local recording that would not play is deleted and the surah streamed once instead. */
+    private var retriedLocal = false
+
+    /** Paused because another sound took over for a moment, so it resumes when that ends. */
+    private var pausedForFocus = false
+
+    private lateinit var audio: AudioManager
+    private lateinit var media: MediaSession
+    private val attributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            AudioManager.AUDIOFOCUS_LOSS -> pause()
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // Recitation is speech: lowering it under another sound would only blur it, so pause.
+                if (player?.isPlaying == true) {
+                    pause()
+                    pausedForFocus = true
+                }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> if (pausedForFocus) resume()
+        }
+    }
+
+    private val focusRequest: AudioFocusRequest by lazy {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(attributes)
+            .setWillPauseWhenDucked(true)
+            .setOnAudioFocusChangeListener(focusListener, main)
+            .build()
+    }
+
+    /** Headphones pulled out: stop before the recitation comes out of the speaker. */
+    private val noisy = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) pause()
+        }
+    }
+    private var noisyRegistered = false
+
+    override fun onCreate() {
+        super.onCreate()
+        audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        media = MediaSession(this, "daab-quran").apply {
+            setCallback(object : MediaSession.Callback() {
+                override fun onPlay() = resume()
+                override fun onPause() = pause()
+                override fun onStop() = stopAll()
+            })
+            setSessionActivity(openApp())
+            isActive = true
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,65 +113,117 @@ class QuranAudioService : Service() {
             PLAY -> {
                 to = intent.getIntExtra("to", Quran.TOTAL)
                 failed = false
+                retriedLocal = false
                 foreground()
                 load(intent.getIntExtra("from", 0))
             }
             TOGGLE -> {
                 val p = player
-                if (p == null) stopAll()
-                else {
-                    if (p.isPlaying) p.pause() else p.start()
-                    QuranAudio.playing.value = p.isPlaying
-                    if (p.isPlaying) tick()
-                    foreground()
-                }
+                if (p == null) stopAll() else if (p.isPlaying) pause() else resume()
             }
             STOP -> stopAll()
+            else -> if (player == null) stopAll()
         }
         return START_NOT_STICKY
     }
 
-    /** Fetches the surah holding [ayah] and starts it at that ayah. */
+    private fun openApp(): PendingIntent =
+        PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+
+    private fun requestFocus(): Boolean =
+        audio.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+
+    private fun pause() {
+        val p = player ?: return
+        pausedForFocus = false
+        if (p.isPlaying) p.pause()
+        main.removeCallbacks(ticker)
+        QuranAudio.playing.value = false
+        unregisterNoisy()
+        foreground()
+    }
+
+    private fun resume() {
+        val p = player ?: return
+        pausedForFocus = false
+        if (!requestFocus()) return
+        p.start()
+        QuranAudio.playing.value = true
+        registerNoisy()
+        tick()
+        foreground()
+    }
+
+    private fun registerNoisy() {
+        if (noisyRegistered) return
+        val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(noisy, filter, Context.RECEIVER_NOT_EXPORTED)
+        else registerReceiver(noisy, filter)
+        noisyRegistered = true
+    }
+
+    private fun unregisterNoisy() {
+        if (!noisyRegistered) return
+        try {
+            unregisterReceiver(noisy)
+        } catch (e: IllegalArgumentException) {
+        }
+        noisyRegistered = false
+    }
+
+    /** Fetches the surah holding [ayah] and starts it at that ayah. The text and timings load off the main thread. */
     private fun load(ayah: Int) {
         val my = ++session
-        val q = Quran.text(this)
-        surah = q.surahAt(ayah)
         QuranAudio.current.value = ayah
         QuranAudio.word.value = -1
         val r = QuranAudio.reciter(this)
         Thread {
             try {
+                val q = quran ?: Quran.text(this).also { quran = it }
+                val s = q.surahAt(ayah)
                 val m = mushaf ?: Mushaf.load(this).also { mushaf = it }
-                val t = QuranAudio.timing(this, r, surah + 1, q.surahs[surah].start)
-                main.post { if (my == session) start(t, ayah, m) }
+                val t = QuranAudio.timing(this, r, s + 1, q.surahs[s].start)
+                main.post {
+                    if (my == session) {
+                        surah = s
+                        start(t, ayah, m, q)
+                    }
+                }
             } catch (e: Exception) {
                 main.post { if (my == session) fail() }
             }
         }.start()
     }
 
-    private fun start(t: SurahTiming, ayah: Int, m: MushafData) {
+    private fun start(t: SurahTiming, ayah: Int, m: MushafData, q: QuranText) {
         timing = t
+        main.removeCallbacks(ticker)
         player?.release()
         val first = t.verses.firstOrNull { it.ayah == ayah }
         // From the opening of a surah the recording starts at zero, so the basmala is heard.
-        val at = if (first == null || ayah == Quran.text(this).surahs[surah].start) 0 else first.from
+        val at = if (first == null || ayah == q.surahs[surah].start) 0 else first.from
+        val local = !t.audioUrl.startsWith("http")
         player = MediaPlayer().apply {
-            setAudioAttributes(
-                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
-            )
+            setAudioAttributes(attributes)
             setWakeMode(this@QuranAudioService, PowerManager.PARTIAL_WAKE_LOCK)
             setOnPreparedListener {
                 if (at > 0) it.seekTo(at.toLong(), MediaPlayer.SEEK_CLOSEST)
-                it.start()
-                QuranAudio.playing.value = true
+                if (requestFocus()) {
+                    it.start()
+                    QuranAudio.playing.value = true
+                    registerNoisy()
+                    tick()
+                }
                 foreground()
-                tick()
             }
             setOnCompletionListener { next() }
             setOnErrorListener { _, _, _ ->
-                fail()
+                if (local && !retriedLocal) {
+                    // A damaged download: remove it and stream this surah instead.
+                    retriedLocal = true
+                    File(t.audioUrl).delete()
+                    load(ayah)
+                } else fail()
                 true
             }
             try {
@@ -112,12 +233,14 @@ class QuranAudioService : Service() {
                 fail()
             }
         }
+        updateMetadata()
     }
 
     /** The surah is over: carry on with the next one if the range goes on. */
     private fun next() {
-        val q = Quran.text(this)
+        val q = quran ?: return stopAll()
         val nextStart = if (surah + 1 < q.surahs.size) q.surahs[surah + 1].start else Quran.TOTAL
+        retriedLocal = false
         if (nextStart >= to) stopAll() else load(nextStart)
     }
 
@@ -125,6 +248,8 @@ class QuranAudioService : Service() {
 
     /** Reads the playing position and finds the ayah and the word that hold it. */
     private fun tick() {
+        // Only one loop ever runs, however quickly playback is paused and resumed.
+        main.removeCallbacks(ticker)
         val p = player ?: return
         val t = timing ?: return
         val m = mushaf ?: return
@@ -138,6 +263,7 @@ class QuranAudioService : Service() {
             }
             if (QuranAudio.current.value != v.ayah) {
                 QuranAudio.current.value = v.ayah
+                updateMetadata()
                 foreground()
             }
             var position = -1
@@ -154,28 +280,65 @@ class QuranAudioService : Service() {
     private fun fail() {
         failed = true
         QuranAudio.playing.value = false
+        unregisterNoisy()
         foreground()
+    }
+
+    private fun label(): String {
+        val at = QuranAudio.current.value
+        val q = quran
+        return when {
+            failed -> "تعذر التشغيل، تأكد من الاتصال"
+            at >= 0 && q != null -> q.label(at)
+            else -> ""
+        }
+    }
+
+    private fun updateMetadata() {
+        media.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, label())
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, QuranAudio.reciter(this).name)
+                .build()
+        )
     }
 
     private fun foreground() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "تلاوة القرآن", NotificationManager.IMPORTANCE_LOW))
-        val q = Quran.text(this)
-        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         fun action(a: String, code: Int) = PendingIntent.getService(
             this, code, Intent(this, QuranAudioService::class.java).setAction(a), PendingIntent.FLAG_IMMUTABLE
         )
         val playing = QuranAudio.playing.value
-        val at = QuranAudio.current.value
-        val n: Notification = NotificationCompat.Builder(this, CHANNEL)
+        media.setPlaybackState(
+            PlaybackState.Builder()
+                .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_STOP)
+                .setState(
+                    if (playing) PlaybackState.STATE_PLAYING else if (failed) PlaybackState.STATE_ERROR else PlaybackState.STATE_PAUSED,
+                    player?.let { runCatching { it.currentPosition.toLong() }.getOrNull() } ?: 0L,
+                    if (playing) 1f else 0f
+                )
+                .build()
+        )
+        val toggle = Notification.Action.Builder(
+            Icon.createWithResource(this, if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play),
+            if (playing) "إيقاف مؤقت" else "تشغيل", action(TOGGLE, 1)
+        ).build()
+        val stop = Notification.Action.Builder(
+            Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel), "إنهاء", action(STOP, 2)
+        ).build()
+        val n: Notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_fg)
             .setContentTitle(QuranAudio.reciter(this).name)
-            .setContentText(if (failed) "تعذر التشغيل، تأكد من الاتصال" else if (at >= 0) q.label(at) else "")
-            .setContentIntent(open)
+            .setContentText(label())
+            .setContentIntent(openApp())
+            .setDeleteIntent(action(STOP, 3))
             .setOngoing(playing)
-            .setSilent(true)
-            .addAction(0, if (playing) "إيقاف مؤقت" else "تشغيل", action(TOGGLE, 1))
-            .addAction(0, "إنهاء", action(STOP, 2))
+            .setOnlyAlertOnce(true)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .addAction(toggle)
+            .addAction(stop)
+            .setStyle(Notification.MediaStyle().setMediaSession(media.sessionToken).setShowActionsInCompactView(0, 1))
             .build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         else startForeground(ID, n)
@@ -186,6 +349,9 @@ class QuranAudioService : Service() {
         main.removeCallbacks(ticker)
         player?.release()
         player = null
+        pausedForFocus = false
+        audio.abandonAudioFocusRequest(focusRequest)
+        unregisterNoisy()
         QuranAudio.playing.value = false
         QuranAudio.current.value = -1
         QuranAudio.word.value = -1
@@ -199,6 +365,7 @@ class QuranAudioService : Service() {
 
     override fun onDestroy() {
         clear()
+        media.release()
         super.onDestroy()
     }
 

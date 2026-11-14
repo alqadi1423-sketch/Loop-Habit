@@ -13,6 +13,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
+import app.daab.habits.data.Quran
+import app.daab.habits.data.QuranText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,6 +32,34 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+
+/**
+ * Data read from the database for a screen. The first read happens at once, so the screen never
+ * opens empty; later reads, when [keys] change, run off the main thread and the last result stays
+ * on screen until the new one is ready.
+ */
+@Composable
+fun <T> rememberLoaded(vararg keys: Any?, load: () -> T): T {
+    val state = remember { mutableStateOf(load()) }
+    val first = remember { booleanArrayOf(true) }
+    LaunchedEffect(*keys) {
+        if (first[0]) {
+            first[0] = false
+            return@LaunchedEffect
+        }
+        state.value = withContext(Dispatchers.IO) { load() }
+    }
+    return state.value
+}
+
+/** The Quran text, parsed off the main thread the first time; null until ready. */
+@Composable
+fun rememberQuranText(): QuranText? {
+    val ctx = LocalContext.current
+    return produceState<QuranText?>(Quran.cached()) {
+        if (value == null) value = withContext(Dispatchers.IO) { Quran.text(ctx) }
+    }.value
+}
 
 /** A rounded panel that holds one block of content. */
 @Composable

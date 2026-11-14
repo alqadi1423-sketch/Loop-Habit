@@ -26,12 +26,17 @@ jobs:
         run: |
           if [ -z "$KEYSTORE_B64" ]; then echo "The signing key secret is missing, refusing to build an app that cannot update the installed one." && exit 1; fi
           echo "$KEYSTORE_B64" | base64 -d > signing.keystore
+      - name: Logic tests
+        # The release only goes out when the habit, Quran and backup rules still hold.
+        run: |
+          set -o pipefail
+          gradle :app:testDebugUnitTest --tests 'app.daab.habits.LogicTest' --no-daemon 2>&1 | tee build.log
       - name: Build
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           set -o pipefail
-          gradle :app:assembleRelease --no-daemon 2>&1 | tee build.log
+          gradle :app:assembleRelease --no-daemon 2>&1 | tee -a build.log
       - name: Save log on failure
         if: failure()
         run: |
@@ -43,9 +48,12 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          # Passed as a variable, never pasted into the script, so quotes in a commit message cannot break or change it.
+          NOTES: ${{ github.event.head_commit.message || 'بناء يدوي' }}
         run: |
           cp app/build/outputs/apk/release/app-release.apk daab.apk
-          gh release create "v0.1.${{ github.run_number }}" daab.apk --title "دأب 0.1.${{ github.run_number }}" --notes "${{ github.event.head_commit.message }}" --latest
+          printf '%s\n' "$NOTES" > notes.txt
+          gh release create "v0.1.${{ github.run_number }}" daab.apk --title "دأب 0.1.${{ github.run_number }}" --notes-file notes.txt --latest
 
   checks:
     runs-on: ubuntu-latest

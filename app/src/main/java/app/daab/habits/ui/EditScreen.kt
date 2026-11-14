@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,43 +90,43 @@ fun timeText(minutes: Int): String {
 fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: () -> Unit) {
     val ctx = LocalContext.current
     val original = remember(id) { if (id == 0L) null else db.habit(id) }
-    var name by remember { mutableStateOf(original?.name ?: if (quranPreset) "ورد القرآن" else "") }
-    var color by remember {
+    var name by rememberSaveable { mutableStateOf(original?.name ?: if (quranPreset) "ورد القرآن" else "") }
+    var color by rememberSaveable {
         mutableIntStateOf(original?.color ?: Palette.colors[db.habits(true).size % Palette.colors.size])
     }
-    var kind by remember { mutableIntStateOf(original?.kind ?: Kind.DAILY) }
-    var weekdays by remember { mutableIntStateOf(original?.weekdays ?: 127) }
-    var perWeek by remember { mutableIntStateOf(original?.perWeek ?: 3) }
-    var reminder by remember { mutableIntStateOf(original?.reminder ?: -1) }
+    var kind by rememberSaveable { mutableIntStateOf(original?.kind ?: Kind.DAILY) }
+    var weekdays by rememberSaveable { mutableIntStateOf(original?.weekdays ?: 127) }
+    var perWeek by rememberSaveable { mutableIntStateOf(original?.perWeek ?: 3) }
+    var reminder by rememberSaveable { mutableIntStateOf(original?.reminder ?: -1) }
     var dates by remember { mutableStateOf(if (id == 0L) emptySet() else db.dates(id)) }
     val groups = remember { db.groups() }
-    var groupId by remember { mutableStateOf(original?.groupId ?: 0L) }
-    var startKind by remember { mutableIntStateOf(original?.startKind ?: Anchor.NONE) }
-    var startValue by remember { mutableIntStateOf(original?.startValue ?: 0) }
-    var endKind by remember { mutableIntStateOf(original?.endKind ?: Anchor.NONE) }
-    var endValue by remember { mutableIntStateOf(original?.endValue ?: 0) }
-    var contentRef by remember { mutableIntStateOf(original?.contentRef ?: if (quranPreset) Quran.CONTENT else 0) }
-    var contentUnit by remember { mutableIntStateOf(original?.contentUnit ?: Quran.UNIT_HIZB) }
-    var contentAmount by remember { mutableStateOf((original?.contentAmount ?: 1).toString()) }
-    var amountError by remember { mutableStateOf(false) }
-    var remindStart by remember { mutableStateOf(original?.remindStart ?: false) }
-    var remindEnd by remember { mutableStateOf((original?.remindEnd ?: 0) > 0) }
-    var target by remember { mutableStateOf((original?.target ?: 0).let { if (it > 0) it.toString() else "" }) }
+    var groupId by rememberSaveable { mutableStateOf(original?.groupId ?: 0L) }
+    var startKind by rememberSaveable { mutableIntStateOf(original?.startKind ?: Anchor.NONE) }
+    var startValue by rememberSaveable { mutableIntStateOf(original?.startValue ?: 0) }
+    var endKind by rememberSaveable { mutableIntStateOf(original?.endKind ?: Anchor.NONE) }
+    var endValue by rememberSaveable { mutableIntStateOf(original?.endValue ?: 0) }
+    var contentRef by rememberSaveable { mutableIntStateOf(original?.contentRef ?: if (quranPreset) Quran.CONTENT else 0) }
+    var contentUnit by rememberSaveable { mutableIntStateOf(original?.contentUnit ?: Quran.UNIT_HIZB) }
+    var contentAmount by rememberSaveable { mutableStateOf((original?.contentAmount ?: 1).toString()) }
+    var amountError by rememberSaveable { mutableStateOf(false) }
+    var remindStart by rememberSaveable { mutableStateOf(original?.remindStart ?: false) }
+    var remindEnd by rememberSaveable { mutableStateOf((original?.remindEnd ?: 0) > 0) }
+    var target by rememberSaveable { mutableStateOf((original?.target ?: 0).let { if (it > 0) it.toString() else "" }) }
     var custom by remember { mutableStateOf(if (id == 0L) emptyList() else db.customItems(id)) }
     val counters = remember { db.counters() }
-    var counterId by remember { mutableStateOf(original?.counterId ?: 0L) }
-    var counterEffect by remember { mutableStateOf((original?.counterEffect ?: 1).toString()) }
-    var addCustom by remember { mutableStateOf(false) }
-    var customError by remember { mutableStateOf(false) }
-    var contentPart by remember { mutableIntStateOf(original?.contentPart ?: 0) }
-    var pickContent by remember { mutableStateOf(false) }
-    var pickSurah by remember { mutableStateOf(false) }
-    var pickAnchor by remember { mutableIntStateOf(0) }
-    var pickAnchorClock by remember { mutableIntStateOf(0) }
-    var nameError by remember { mutableStateOf(false) }
-    var pickDate by remember { mutableStateOf(false) }
-    var pickTime by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
+    var counterId by rememberSaveable { mutableStateOf(original?.counterId ?: 0L) }
+    var counterEffect by rememberSaveable { mutableStateOf((original?.counterEffect ?: 1).toString()) }
+    var addCustom by rememberSaveable { mutableStateOf(false) }
+    var customError by rememberSaveable { mutableStateOf(false) }
+    var contentPart by rememberSaveable { mutableIntStateOf(original?.contentPart ?: 0) }
+    var pickContent by rememberSaveable { mutableStateOf(false) }
+    var pickSurah by rememberSaveable { mutableStateOf(false) }
+    var pickAnchor by rememberSaveable { mutableIntStateOf(0) }
+    var pickAnchorClock by rememberSaveable { mutableIntStateOf(0) }
+    var nameError by rememberSaveable { mutableStateOf(false) }
+    var pickDate by rememberSaveable { mutableStateOf(false) }
+    var pickTime by rememberSaveable { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     fun save() {
@@ -253,10 +254,10 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                     Text("الأيام البيض لستة أشهر قادمة")
                 }
                 OutlinedButton(onClick = { dates = dates + Hijri.arafahAndAshura(from) }) {
-                    Text("عرفة وعاشوراء القادمان")
+                    Text("عرفة وتاسوعاء وعاشوراء القادمة")
                 }
                 Text(
-                    "التواريخ الهجرية بتقويم أم القرى، وقد تتقدم أو تتأخر يومًا بحسب الرؤية. والعيدان وأيام التشريق مستثناة.",
+                    "التواريخ الهجرية بتقويم أم القرى مع تعديلك في الإعدادات إن كان. والعيدان وأيام التشريق مستثناة.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -314,9 +315,9 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
                     }
                 }
                 if (contentUnit == Quran.UNIT_SURAH) {
-                    val names = remember { Quran.text(ctx).surahs.map { it.name } }
+                    val names = rememberQuranText()?.surahs?.map { it.name } ?: emptyList()
                     OutlinedButton(onClick = { pickSurah = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("السورة: " + (names.getOrNull((contentAmount.toIntOrNull() ?: 1) - 1) ?: names[0]))
+                        Text("السورة: " + (names.getOrNull((contentAmount.toIntOrNull() ?: 1) - 1) ?: names.firstOrNull() ?: ""))
                     }
                     Text(
                         "تُقرأ السورة كاملة في كل مرة، وتُنجز العادة عند إتمامها.",
@@ -496,7 +497,7 @@ fun EditScreen(db: Db, id: Long, quranPreset: Boolean, saved: () -> Unit, back: 
     }
 
     if (pickSurah) {
-        val names = remember { Quran.text(ctx).surahs.map { it.name } }
+        val names = rememberQuranText()?.surahs?.map { it.name } ?: emptyList()
         AlertDialog(
             onDismissRequest = { pickSurah = false },
             title = { Text("اختر السورة") },

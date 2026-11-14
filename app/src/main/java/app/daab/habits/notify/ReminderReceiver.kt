@@ -21,6 +21,26 @@ import app.daab.habits.widget.HabitWidget
 import java.time.LocalDate
 import java.time.ZoneId
 
+/** System events that move or wipe alarms: a restart, an update, a change of clock or time zone. */
+class SystemEventsReceiver : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED -> {
+                val pending = goAsync()
+                Thread {
+                    try {
+                        ReminderReceiver.scheduleAll(ctx)
+                        HabitWidget.updateAll(ctx)
+                    } finally {
+                        pending.finish()
+                    }
+                }.start()
+            }
+        }
+    }
+}
+
 /**
  * Reminders of a habit: at a fixed clock time, when its time window opens, and shortly before
  * the window closes. Each alarm fires every day and stays silent when the habit is not due
@@ -91,6 +111,24 @@ class ReminderReceiver : BroadcastReceiver() {
         fun scheduleAll(ctx: Context) {
             for (h in Db.get(ctx).habits()) schedule(ctx, h)
         }
+
+        /** Takes down reminders of habits already marked today, wherever they were marked. */
+        fun clearHandled(ctx: Context) {
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val shown = try {
+                nm.activeNotifications
+            } catch (e: Exception) {
+                return
+            }
+            if (shown.isEmpty()) return
+            val db = Db.get(ctx)
+            val today = Schedule.today()
+            for (n in shown) {
+                if (n.notification.channelId != CHANNEL) continue
+                val marked = (db.entries(n.id.toLong())[today] ?: Mark.NONE) != Mark.NONE
+                if (marked) nm.cancel(n.id)
+            }
+        }
     }
 
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -98,13 +136,8 @@ class ReminderReceiver : BroadcastReceiver() {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val id = intent.getLongExtra(EXTRA_HABIT, 0)
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,
-            Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED -> {
-                scheduleAll(ctx)
-                HabitWidget.updateAll(ctx)
-            }
             ACTION_DONE -> if (id > 0) {
-                db.setEntry(id, Schedule.today(), Mark.DONE)
+                db.setMark(id, Schedule.today(), Mark.DONE)
                 nm.cancel(id.toInt())
                 HabitWidget.updateAll(ctx)
             }

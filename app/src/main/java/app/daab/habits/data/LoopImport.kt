@@ -38,7 +38,8 @@ object LoopImport {
             var days = 0
             val query = "SELECT id, name, color, freq_num, freq_den, archived, position, reminder_hour, reminder_min, " +
                 pick("type", "0") + ", " + pick("target_value", "0") + " FROM Habits ORDER BY position"
-            source.rawQuery(query, null).use { c ->
+            // One write: a file that fails half way adds nothing.
+            db.tx { source.rawQuery(query, null).use { c ->
                 while (c.moveToNext()) {
                     val loopId = c.getLong(0)
                     val name = (c.getString(1) ?: "").trim()
@@ -89,7 +90,7 @@ object LoopImport {
                     habits++
                     days += marks.size
                 }
-            }
+            } }
             return ImportResult(habits, days)
         } finally {
             source.close()

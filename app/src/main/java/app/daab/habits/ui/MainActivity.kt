@@ -37,12 +37,15 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.daab.habits.data.Anchor
+import app.daab.habits.data.Backup
 import app.daab.habits.data.Db
 import app.daab.habits.data.Habit
 import app.daab.habits.data.Kind
@@ -67,6 +70,41 @@ sealed interface Screen {
     data class Detail(val id: Long) : Screen
     data class Reader(val id: Long) : Screen
 }
+
+/** Writes a screen as a short text so it survives the system closing the app in the background. */
+val ScreenSaver = Saver<Screen, String>(
+    save = {
+        when (it) {
+            Screen.Home -> "home"
+            Screen.Counters -> "counters"
+            Screen.Adhkar -> "adhkar"
+            Screen.QuranTab -> "quran"
+            Screen.Settings -> "settings"
+            Screen.Archived -> "archived"
+            is Screen.AdhkarRead -> "adhkarread:${it.category}:${it.part}"
+            is Screen.Mushaf -> "mushaf:${it.ayah}:${it.page}"
+            is Screen.Edit -> "edit:${it.id}:${it.quran}"
+            is Screen.Detail -> "detail:${it.id}"
+            is Screen.Reader -> "reader:${it.id}"
+        }
+    },
+    restore = { text ->
+        val p = text.split(':')
+        when (p[0]) {
+            "counters" -> Screen.Counters
+            "adhkar" -> Screen.Adhkar
+            "quran" -> Screen.QuranTab
+            "settings" -> Screen.Settings
+            "archived" -> Screen.Archived
+            "adhkarread" -> Screen.AdhkarRead(p[1].toInt(), p[2].toInt())
+            "mushaf" -> Screen.Mushaf(p[1].toInt(), p[2].toInt())
+            "edit" -> Screen.Edit(p[1].toLong(), p[2].toBoolean())
+            "detail" -> Screen.Detail(p[1].toLong())
+            "reader" -> Screen.Reader(p[1].toLong())
+            else -> Screen.Home
+        }
+    }
+)
 
 class MainActivity : ComponentActivity() {
 
@@ -99,6 +137,8 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         resumes.intValue++
         HabitWidget.updateAll(this)
+        val app = applicationContext
+        Thread { runCatching { Backup.daily(app, Db.get(app)) } }.start()
     }
 }
 
@@ -151,12 +191,13 @@ fun windowText(h: Habit, times: IntArray): String =
 fun App(resumes: Int, readerRequest: Long, readerHandled: () -> Unit) {
     val ctx = LocalContext.current
     val db = remember { Db.get(ctx) }
-    var screen by remember { mutableStateOf<Screen>(Screen.Home) }
-    var tab by remember { mutableStateOf<Screen>(Screen.Home) }
+    var screen by rememberSaveable(stateSaver = ScreenSaver) { mutableStateOf<Screen>(Screen.Home) }
+    var tab by rememberSaveable(stateSaver = ScreenSaver) { mutableStateOf<Screen>(Screen.Home) }
     var version by remember { mutableIntStateOf(0) }
     val changed = {
         version++
         HabitWidget.updateAll(ctx)
+        ReminderReceiver.clearHandled(ctx)
     }
     val go = { next: Screen ->
         if (next == Screen.Home || next == Screen.Settings ||

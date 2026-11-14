@@ -5,7 +5,7 @@ import java.time.LocalDate
 import java.time.chrono.HijrahDate
 import java.time.temporal.ChronoField
 
-/** Hijri dates by the Umm al-Qura calendar. Moon sighting can shift a date by a day. */
+/** Hijri dates by the Umm al-Qura calendar, moved by the user's adjustment when the moon was sighted on another day. */
 object Hijri {
 
     private val months = listOf(
@@ -15,11 +15,13 @@ object Hijri {
     private val weekdays = listOf("الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت")
 
     private fun parts(day: Long): Triple<Int, Int, Int>? = try {
-        val h = HijrahDate.from(LocalDate.ofEpochDay(day))
+        val h = HijrahDate.from(LocalDate.ofEpochDay(day + Settings.hijriOffset))
         Triple(h.get(ChronoField.YEAR), h.get(ChronoField.MONTH_OF_YEAR), h.get(ChronoField.DAY_OF_MONTH))
     } catch (e: Exception) {
         null
     }
+
+    fun isRamadan(day: Long): Boolean = parts(day)?.second == 9
 
     fun text(day: Long): String {
         val name = weekdays[Schedule.weekdayIndex(day)]
@@ -46,10 +48,17 @@ object Hijri {
             p != null && p.third in 13..15 && !noFasting(it)
         }.toSet()
 
-    /** The next day of Arafah and the next Ashura. */
-    fun arafahAndAshura(from: Long): Set<Long> =
-        (from until from + 370).filter {
-            val p = parts(it)
-            p != null && ((p.second == 12 && p.third == 9) || (p.second == 1 && p.third == 10))
-        }.toSet()
+    /** The next day of Arafah, and the next Tasu'a and Ashura (the 9th and 10th of Muharram), once each. */
+    fun arafahAndAshura(from: Long): Set<Long> {
+        val out = HashSet<Long>()
+        val found = HashSet<Pair<Int, Int>>()
+        for (d in from until from + 370) {
+            val p = parts(d) ?: continue
+            val key = p.second to p.third
+            val wanted = key == (12 to 9) || key == (1 to 9) || key == (1 to 10)
+            if (wanted && found.add(key)) out.add(d)
+            if (found.size == 3) break
+        }
+        return out
+    }
 }

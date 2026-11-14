@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,13 +39,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.net.Uri
+import androidx.compose.runtime.rememberCoroutineScope
+import app.daab.habits.data.Backup
 import app.daab.habits.data.Db
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import app.daab.habits.data.Mushaf
 import app.daab.habits.audio.QuranAudio
 import app.daab.habits.data.LoopImport
 import java.io.File
 import app.daab.habits.data.prayerNames
 import app.daab.habits.logic.City
+import app.daab.habits.logic.Hijri
+import app.daab.habits.logic.Locate
 import app.daab.habits.logic.PrayerTimes
 import app.daab.habits.logic.Schedule
 import app.daab.habits.logic.Settings
@@ -79,8 +91,64 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
     val ctx = LocalContext.current
     var city by remember { mutableStateOf(PrayerTimes.city(ctx).name) }
     val today = Schedule.today()
-    val times = remember(city, today) { PrayerTimes.forDay(ctx, today) }
+    var timesVersion by remember { mutableStateOf(0) }
+    val times = remember(city, today, timesVersion) { PrayerTimes.forDay(ctx, today) }
+    var adjust by remember { mutableStateOf(-1) }
+    var pickMethod by remember { mutableStateOf(false) }
+    var locating by remember { mutableStateOf(false) }
+
+    fun prayerChanged() {
+        timesVersion++
+        ReminderReceiver.scheduleAll(ctx)
+        HabitWidget.updateAll(ctx)
+        changed()
+    }
+
+    fun useLocation() {
+        locating = true
+        Locate.once(ctx) { loc ->
+            locating = false
+            if (loc == null) {
+                Toast.makeText(ctx, "تعذر معرفة موقعك. فعّل الموقع في الجوال أو اختر مدينة.", Toast.LENGTH_LONG).show()
+            } else {
+                val name = "موقعي (" + "%.2f".format(java.util.Locale.US, loc.latitude) + "، " + "%.2f".format(java.util.Locale.US, loc.longitude) + ")"
+                PrayerTimes.setCity(ctx, City(name, loc.latitude, loc.longitude))
+                city = name
+                pickCity = false
+                prayerChanged()
+            }
+        }
+    }
+
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) useLocation()
+        else Toast.makeText(ctx, "بلا إذن الموقع اختر مدينتك من القائمة", Toast.LENGTH_LONG).show()
+    }
     var pickCity by remember { mutableStateOf(false) }
+    var restoreFrom by remember { mutableStateOf<Uri?>(null) }
+    var restoreCopy by remember { mutableStateOf<File?>(null) }
+    var showCopies by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    /** Replaces everything with a backup, after a copy of the current data is kept on the phone. */
+    fun restore(read: () -> String?) {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                try {
+                    Backup.restore(ctx, db, read() ?: "")
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            city = PrayerTimes.city(ctx).name
+            refresh()
+            Toast.makeText(
+                ctx, if (ok) "استُعيدت النسخة، وحُفظت نسخة مما كان قبلها" else "الملف ليس نسخة احتياطية صالحة، ولم يتغير شيء",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     fun refresh() {
         ReminderReceiver.scheduleAll(ctx)
@@ -90,9 +158,7 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) {
             try {
-                val c = PrayerTimes.city(ctx)
-                val settings = JSONObject().put("city", c.name).put("lat", c.lat).put("lng", c.lng)
-                ctx.contentResolver.openOutputStream(uri)?.use { it.write(db.exportJson(settings).toByteArray()) }
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(Backup.json(ctx, db).toByteArray()) }
                 Toast.makeText(ctx, "حُفظت النسخة الاحتياطية", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(ctx, "تعذر حفظ النسخة", Toast.LENGTH_LONG).show()
@@ -110,19 +176,23 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
         }
     }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
+        if (uri != null) restoreFrom = uri
+    }
+
+    var folderSet by remember { mutableStateOf(Backup.folder(ctx) != null) }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        if (tree != null) {
             try {
-                val text = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
-                db.importJson(text ?: "")?.let { st ->
-                    if (st.has("city")) {
-                        PrayerTimes.setCity(ctx, City(st.getString("city"), st.getDouble("lat"), st.getDouble("lng")))
-                        city = st.getString("city")
-                    }
-                }
-                refresh()
-                Toast.makeText(ctx, "استُعيدت النسخة", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(ctx, "الملف ليس نسخة احتياطية صالحة", Toast.LENGTH_LONG).show()
+                ctx.contentResolver.takePersistableUriPermission(
+                    tree, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (e: SecurityException) {
+            }
+            Backup.setFolder(ctx, tree)
+            folderSet = true
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) { Backup.writeToFolder(ctx, db) }
+                Toast.makeText(ctx, if (ok) "حُفظت نسخة في المجلد، وتُحدّث كل يوم" else "تعذرت الكتابة في هذا المجلد", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -132,6 +202,7 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
             val copy = File(ctx.cacheDir, "loop-import.db")
             try {
                 ctx.contentResolver.openInputStream(uri)?.use { input -> copy.outputStream().use { input.copyTo(it) } }
+                Backup.safetyCopy(ctx, db, "before-loop-import")
                 val result = LoopImport.run(db, copy, Schedule.today())
                 refresh()
                 Toast.makeText(ctx, "نُقلت ${result.habits} عادة و${result.days} يومًا من سجلها", Toast.LENGTH_LONG).show()
@@ -152,7 +223,10 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
             Panel(padding = 0.dp) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
                     for (i in prayerNames.indices) {
-                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(
+                            Modifier.weight(1f).clickable { adjust = i }.padding(vertical = 2.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             Text(
                                 prayerNames[i], style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -162,7 +236,22 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
                     }
                 }
                 Divider()
-                SettingRow("المدينة", city, "تُحسب المواقيت داخل الجوال بطريقة أم القرى") { pickCity = true }
+                SettingRow("المكان", city, "تُحسب المواقيت داخل الجوال بلا إنترنت. اضغط وقت أي صلاة لتقديمه أو تأخيره دقائق") { pickCity = true }
+                Divider()
+                SettingRow("طريقة الحساب", PrayerTimes.methods[PrayerTimes.method(ctx)].name, "أم القرى للسعودية، وغيرها لبلدان أخرى") { pickMethod = true }
+                Divider()
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("العصر على المذهب الحنفي", style = MaterialTheme.typography.bodyLarge)
+                        Text("حين يصير ظل الشيء مثليه", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    var hanafi by remember { mutableStateOf(PrayerTimes.hanafi(ctx)) }
+                    Switch(checked = hanafi, onCheckedChange = {
+                        hanafi = it
+                        PrayerTimes.setHanafi(ctx, it)
+                        prayerChanged()
+                    })
+                }
             }
 
             SectionLabel("اليوم والأسبوع")
@@ -191,6 +280,23 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
                                 refresh()
                             }, label = { Text(label) })
                         }
+                    }
+                }
+            }
+
+            SectionLabel("التاريخ الهجري")
+            Panel(padding = 14.dp) {
+                Text(Hijri.text(today), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "بتقويم أم القرى. إن ثبتت رؤية الهلال في يوم آخر فعدّل التاريخ هنا، فيتبعه عرض التاريخ وأيام الصيام ووقت العشاء في رمضان.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for ((value, label) in listOf(-2 to "−٢", -1 to "−١", 0 to "بلا تعديل", 1 to "+١", 2 to "+٢")) {
+                        FilterChip(selected = Settings.hijriOffset == value, onClick = {
+                            Settings.setHijriOffset(ctx, value)
+                            refresh()
+                        }, label = { Text(label) })
                     }
                 }
             }
@@ -228,7 +334,8 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
 
             Panel(padding = 14.dp, modifier = Modifier.padding(top = 8.dp)) {
                 var reciter by remember { mutableStateOf(QuranAudio.reciter(ctx).id) }
-                var bytes by remember { mutableStateOf(QuranAudio.downloadedBytes(ctx)) }
+                var bytes by remember { mutableStateOf(0L) }
+                LaunchedEffect(Unit) { bytes = withContext(Dispatchers.IO) { QuranAudio.downloadedBytes(ctx) } }
                 Text("القارئ", style = MaterialTheme.typography.bodyLarge)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (r in QuranAudio.reciters) {
@@ -265,6 +372,24 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
                     importer.launch(arrayOf("application/json", "*/*"))
                 }
                 Divider()
+                SettingRow(
+                    "نسخة يومية إلى مجلد",
+                    value = if (folderSet) "مفعّلة" else "",
+                    detail = if (folderSet) "يُحدّث ملف daab-backup-auto.json في المجلد كل يوم. اضغط لاختيار مجلد آخر."
+                    else "اختر مجلدًا، في Google Drive مثلًا، فتُحفظ فيه نسخة كل يوم وتبقى لو ضاع الجوال"
+                ) { folderPicker.launch(null) }
+                if (folderSet) {
+                    TextButton(onClick = {
+                        Backup.setFolder(ctx, null)
+                        folderSet = false
+                    }, modifier = Modifier.padding(horizontal = 6.dp)) { Text("إيقاف النسخة اليومية إلى المجلد") }
+                }
+                Divider()
+                SettingRow(
+                    "النسخ المحفوظة على الجوال",
+                    detail = "نسخة كل يوم، ونسخة قبل كل استعادة أو استيراد، فتتراجع عنها إن احتجت"
+                ) { showCopies = true }
+                Divider()
                 SettingRow("تصدير السجل جدولًا", detail = "ملف يُفتح في برامج الجداول، ولا يُستعاد منه") { csvExporter.launch("daab-log.csv") }
                 Divider()
                 SettingRow("العادات المؤرشفة") { go(Screen.Archived) }
@@ -281,19 +406,137 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
         }
     }
 
+    restoreFrom?.let { uri ->
+        ConfirmRestore(
+            onConfirm = {
+                restoreFrom = null
+                restore { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }
+            },
+            onDismiss = { restoreFrom = null }
+        )
+    }
+
+    restoreCopy?.let { f ->
+        ConfirmRestore(
+            onConfirm = {
+                restoreCopy = null
+                showCopies = false
+                restore { f.readText() }
+            },
+            onDismiss = { restoreCopy = null }
+        )
+    }
+
+    if (showCopies) {
+        val copies = remember { Backup.safetyCopies(ctx) }
+        val format = remember { DateTimeFormatter.ofPattern("yyyy/MM/dd  HH:mm") }
+        AlertDialog(
+            onDismissRequest = { showCopies = false },
+            title = { Text("النسخ المحفوظة على الجوال") },
+            text = {
+                if (copies.isEmpty()) Text("لا نسخ بعد. تُحفظ هنا نسخة قبل كل استعادة أو استيراد.")
+                else LazyColumn {
+                    items(copies) { f ->
+                        val label = when {
+                            f.name.startsWith("before-restore") -> "قبل استعادة"
+                            f.name.startsWith("before-loop") -> "قبل استيراد Loop"
+                            f.name.startsWith("auto") -> "نسخة يومية"
+                            else -> "نسخة"
+                        }
+                        val time = Instant.ofEpochMilli(f.lastModified()).atZone(ZoneId.systemDefault()).format(format)
+                        Row(
+                            Modifier.fillMaxWidth().clickable { restoreCopy = f }.padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(label, style = MaterialTheme.typography.bodyLarge)
+                                Text("\u200E" + time, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text("استرجاع", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showCopies = false }) { Text("إغلاق") } }
+        )
+    }
+
+    if (adjust >= 0) {
+        val i = adjust
+        var minutes by remember(i) { mutableStateOf(PrayerTimes.adjustment(ctx, i)) }
+        AlertDialog(
+            onDismissRequest = { adjust = -1 },
+            title = { Text(prayerNames[i]) },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Text("قدّم الوقت أو أخّره ليوافق مسجدك.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
+                        TextButton(onClick = { if (minutes > -30) minutes-- }) { Text("−", style = MaterialTheme.typography.headlineSmall) }
+                        Text(
+                            if (minutes == 0) "بلا تعديل" else "\u200E" + (if (minutes > 0) "+" else "") + minutes + " د",
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        TextButton(onClick = { if (minutes < 30) minutes++ }) { Text("+", style = MaterialTheme.typography.headlineSmall) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    PrayerTimes.setAdjustment(ctx, i, minutes)
+                    adjust = -1
+                    prayerChanged()
+                }) { Text("حفظ") }
+            },
+            dismissButton = { TextButton(onClick = { adjust = -1 }) { Text("إلغاء") } }
+        )
+    }
+
+    if (pickMethod) {
+        AlertDialog(
+            onDismissRequest = { pickMethod = false },
+            title = { Text("طريقة الحساب") },
+            text = {
+                LazyColumn {
+                    items(PrayerTimes.methods.indices.toList()) { i ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                PrayerTimes.setMethod(ctx, i)
+                                pickMethod = false
+                                prayerChanged()
+                            }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.material3.RadioButton(selected = PrayerTimes.method(ctx) == i, onClick = null)
+                            Text(PrayerTimes.methods[i].name, Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { pickMethod = false }) { Text("إغلاق") } }
+        )
+    }
+
     if (pickCity) {
         AlertDialog(
             onDismissRequest = { pickCity = false },
-            title = { Text("المدينة") },
+            title = { Text("المكان") },
             text = {
                 LazyColumn {
+                    item {
+                        TextButton(onClick = {
+                            val has = androidx.core.content.ContextCompat.checkSelfPermission(
+                                ctx, android.Manifest.permission.ACCESS_COARSE_LOCATION
+                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            if (has) useLocation() else askLocation.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                        }, enabled = !locating) { Text(if (locating) "جارٍ تحديد موقعك…" else "📍 موقعي الحالي") }
+                    }
                     items(PrayerTimes.cities) { c ->
                         TextButton(onClick = {
                             PrayerTimes.setCity(ctx, c)
                             city = c.name
                             pickCity = false
-                            ReminderReceiver.scheduleAll(ctx)
-                            HabitWidget.updateAll(ctx)
+                            prayerChanged()
                         }) { Text(c.name) }
                     }
                 }
@@ -301,4 +544,17 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
             confirmButton = { TextButton(onClick = { pickCity = false }) { Text("إلغاء") } }
         )
     }
+}
+
+@Composable
+private fun ConfirmRestore(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("استبدال كل البيانات؟") },
+        text = {
+            Text("ستحل النسخة محل كل عاداتك وسجلها وإعداداتك الحالية. تُحفظ نسخة مما عندك الآن على الجوال قبل ذلك، فتستطيع الرجوع إليها من «النسخ المحفوظة على الجوال».")
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("استبدال") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
 }

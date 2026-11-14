@@ -39,9 +39,9 @@ class HabitWidget : AppWidgetProvider() {
 
     companion object {
         const val ALL_HABITS = -1L
-        private const val ACTION_TAP = "app.daab.habits.widget.TAP"
-        private const val ACTION_REFRESH = "app.daab.habits.widget.REFRESH"
-        private const val EXTRA_HABIT = "habit"
+        internal const val ACTION_TAP = "app.daab.habits.widget.TAP"
+        internal const val ACTION_REFRESH = "app.daab.habits.widget.REFRESH"
+        internal const val EXTRA_HABIT = "habit"
         private const val PREFS = "widgets"
         private const val DARK = 0xFF1B2A2E.toInt()
         private const val TRACK = 0xFF33454A.toInt()
@@ -80,7 +80,7 @@ class HabitWidget : AppWidgetProvider() {
             val at = LocalDate.ofEpochDay(today).atStartOfDay(ZoneId.systemDefault())
                 .plusMinutes(next.toLong()).plusSeconds(20).toInstant().toEpochMilli()
             val pending = PendingIntent.getBroadcast(
-                ctx, -7, Intent(ctx, HabitWidget::class.java).setAction(ACTION_REFRESH),
+                ctx, -7, Intent(ctx, WidgetActionReceiver::class.java).setAction(ACTION_REFRESH),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             Alarms.set(ctx, at, pending)
@@ -94,7 +94,7 @@ class HabitWidget : AppWidgetProvider() {
             )
 
         private fun tap(ctx: Context, widgetId: Int, habitId: Long): PendingIntent {
-            val i = Intent(ctx, HabitWidget::class.java).setAction(ACTION_TAP).putExtra(EXTRA_HABIT, habitId)
+            val i = Intent(ctx, WidgetActionReceiver::class.java).setAction(ACTION_TAP).putExtra(EXTRA_HABIT, habitId)
             return PendingIntent.getBroadcast(
                 ctx, widgetId, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
@@ -296,27 +296,5 @@ class HabitWidget : AppWidgetProvider() {
         val e = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         for (id in ids) e.remove("w_$id").remove("g_$id")
         e.apply()
-    }
-
-    override fun onReceive(ctx: Context, intent: Intent) {
-        when (intent.action) {
-            ACTION_TAP -> {
-                val habitId = intent.getLongExtra(EXTRA_HABIT, 0)
-                val db = Db.get(ctx)
-                val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                val now = System.currentTimeMillis()
-                val h = db.habit(habitId)
-                // Ignore a second tap that lands before the square has redrawn.
-                if (h != null && now - prefs.getLong("tap_$habitId", 0) > 1500) {
-                    prefs.edit().putLong("tap_$habitId", now).apply()
-                    val today = Schedule.today()
-                    val finished = db.entries(habitId)[today] == Mark.DONE
-                    if (!(h.target > 0 && finished)) db.tap(h, today)
-                }
-                updateAll(ctx)
-            }
-            ACTION_REFRESH -> updateAll(ctx)
-            else -> super.onReceive(ctx, intent)
-        }
     }
 }
