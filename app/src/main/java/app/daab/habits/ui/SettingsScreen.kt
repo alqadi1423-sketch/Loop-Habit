@@ -96,6 +96,12 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
     var adjust by remember { mutableStateOf(-1) }
     var pickMethod by remember { mutableStateOf(false) }
     var locating by remember { mutableStateOf(false) }
+    var pickCity by remember { mutableStateOf(false) }
+
+    fun refresh() {
+        ReminderReceiver.scheduleAll(ctx)
+        changed()
+    }
 
     fun prayerChanged() {
         timesVersion++
@@ -124,7 +130,6 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
         if (granted) useLocation()
         else Toast.makeText(ctx, "بلا إذن الموقع اختر مدينتك من القائمة", Toast.LENGTH_LONG).show()
     }
-    var pickCity by remember { mutableStateOf(false) }
     var restoreFrom by remember { mutableStateOf<Uri?>(null) }
     var restoreCopy by remember { mutableStateOf<File?>(null) }
     var showCopies by remember { mutableStateOf(false) }
@@ -148,11 +153,6 @@ fun SettingsScreen(db: Db, changed: () -> Unit, go: (Screen) -> Unit) {
                 Toast.LENGTH_LONG
             ).show()
         }
-    }
-
-    fun refresh() {
-        ReminderReceiver.scheduleAll(ctx)
-        changed()
     }
 
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
